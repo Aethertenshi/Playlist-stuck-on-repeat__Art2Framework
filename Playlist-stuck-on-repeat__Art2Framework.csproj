@@ -9,7 +9,29 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="HoLLy.osu.OppaiSharp" Version="2.1.0" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="D:\Projects_Baru\C#\Art2Framework\Art2Framework.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <None Update="content\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup>
+	  <None Update="sounds\**\*">
+		  <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+	  </None>
+  </ItemGroup>
+
+	<ItemGroup>
+		<None Update="fonts\**\*">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
+	</ItemGroup>
 
 </Project>
