@@ -111,12 +111,13 @@ namespace CoreGame
             // Extract timing data & support hold notes
             foreach (OsuHitObject hitObject in beatmap.HitObjects)
             {
-                bool isHold = hitObject.ObjectType == HitObjectType.Hold;
+                bool isHold = hitObject.ObjectType == HitObjectType.Hold || hitObject.ObjectType == HitObjectType.Slider;
                 double duration = 0;
                 Frame? holdBody = null;
 
                 if (isHold && hitObject is OsuSlider slider)
                 {
+                    Console.WriteLine("Hold Note / Slider Duration: " + slider.DurationMs);
                     duration = slider.DurationMs;
                     holdBody = new Frame
                     {
