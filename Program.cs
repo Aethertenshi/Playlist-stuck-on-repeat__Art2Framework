@@ -1,14 +1,15 @@
 using ArtFrame;
 using ArtFrame.ArtTypes;
 using ArtFrame.Easings;
+using ArtFrame.Effects;
 using ArtFrame.RythmModule;
 using ArtFrame.UIModifier;
 using ArtFrame.UserInterface;
-using ArtFrame.Effects;
 using OppaiSharp;
 using OsuLib;
-
+using System.Numerics;
 using static ArtFrame.AudioHelper;
+using static ArtFrame.EffectsHelper;
 using static ArtFrame.FontHelper;
 using static ArtFrame.GraphicsHelper;
 using static ArtFrame.InputHelper;
@@ -16,7 +17,6 @@ using static ArtFrame.RythmHelper;
 using static ArtFrame.SpriteHelper;
 using static ArtFrame.TextureHelper;
 using static ArtFrame.TweenHelper;
-using static ArtFrame.EffectsHelper;
 
 namespace CoreGame
 {
@@ -61,7 +61,7 @@ namespace CoreGame
         private float _introAlpha = 0f;
         private bool _transitionFired = false;
         private GridTransitionRadial _welcomeTransition = null!;
-        private float _logoRotation = 0f;
+        private Tweener _logoRotation = AddTween(new Tweener());
 
         // Phase 1: Cover centers, UI hides, BG darkens
         private Tweener _startTransitionTweener = AddTween(new Tweener());
@@ -186,7 +186,7 @@ namespace CoreGame
             _currentCoverColor = _targetCoverColor;
 
             // Initialize Grid Transition Radial
-            _welcomeTransition = new GridTransitionRadial(Color.Black, fadeOut: true, reverseWave: false, tileSize: 60);
+            _welcomeTransition = new GridTransitionRadial(Color.Black, fadeOut: true, reverseWave: false, tileSize: 70);
             _welcomeTransition.SetValue(0f); // Screen starts completely black/opaque
 
             // --- L1 UI Elements ---
@@ -275,7 +275,7 @@ namespace CoreGame
                     if (Keyboard.IsKeyPressed(Keys.Space))
                     {
                         _isCoverView = !_isCoverView;
-                        _bgTweener.Restart(duration: 0.55f, targetValue: _isCoverView ? 1.0f : 0f, Easing.Exponential, Direction.Out);
+                        _bgTweener.Restart(duration: 0.7f, targetValue: _isCoverView ? 1.0f : 0f, Easing.Exponential, Direction.Out);
                     }
                 }
             };
@@ -290,19 +290,18 @@ namespace CoreGame
                 fit = ObjectFit.Cover,
                 onUpdate = (e, dt) =>
                 {
-                    _logoRotation += dt * 0.12f; // Slowly rotate the logo continuously
                     if (_inIntro)
                     {
                         e.alpha = _introAlpha;
                         e.size = new UDim2(0.35f, 0.35f);
                         e.position = UDim2.FromScale(0.5f, 0.5f);
-                        e.rotation = _logoRotation;
+                        e.rotation = _logoRotation.CurrentValue;
                     }
                     else
                     {
                         // Calculate dynamic size
                         e.size = (new UDim2(0.35f, 0.35f) * MathF.Max(_logoTweener.CurrentValue, _startTransitionTweener.CurrentValue)) * MathF.Max((1f - _bgTweener.CurrentValue), 0.35f);
-                        e.rotation = _logoRotation + (1f - _bgTweener.CurrentValue) * -3.5f;
+                        e.rotation = _logoRotation.CurrentValue * (1f - _bgTweener.CurrentValue);
 
                         // Match the background's position logic perfectly so it stays centered inside the cover
                         float activePanelValue = MathF.Max(_settingsTweener.CurrentValue, _modifiersTweener.CurrentValue);
@@ -552,7 +551,7 @@ namespace CoreGame
             Add(progressBarTrack);
 
             // 5. Progress Bar Dot / Handle
-            ArtObject progressBarDot = new Frame
+            ArtObject progressBarDot = new CircleFrame
             {
                 // Anchor from the center of the dot so it sits perfectly over the end of the line
                 anchorX = AnchorX.Center,
@@ -1015,8 +1014,6 @@ namespace CoreGame
 
             // --- Drawing Index ---
             Add(bgDrop);
-            Add(blurBg);
-            Add(_welcomeTransition); // Renders over the background but behind the logo
 
             Add(songTitle);
             Add(songArtist);
@@ -1025,6 +1022,9 @@ namespace CoreGame
             Add(timeRemaining);
             Add(timePlayed);
             Add(progressBarTrack);
+
+            Add(blurBg);
+            Add(_welcomeTransition); // Renders over the background but behind the logo
 
             Add(logo);
             Add(startPrompt);
@@ -1086,30 +1086,27 @@ namespace CoreGame
                 if (length > 0)
                 {
                     float progress = played / length;
-                    _introAlpha = Math.Clamp(progress * 1.25f, 0f, 1f); // Smooth logo fade-in
+                    _introAlpha = Math.Clamp(progress * 1.01f, 0f, 1f); // Smooth logo fade-in
 
                     // Trigger GridTransitionRadial at 95% completion of welcome.wav
-                    if (progress >= 0.95f && !_transitionFired)
+                    if (progress >= 0.915f && !_transitionFired)
                     {
                         _transitionFired = true;
-                        _welcomeTransition.Play(1.5f, Easing.Exponential, Direction.Out);
-                    }
-
-                    // Complete intro and play selected song
-                    if (progress >= 0.99f || (_transitionFired && !_welcomeTransition.IsPlaying))
-                    {
-                        _inIntro = false;
-                        StopMusic("welcome");
+                        _welcomeTransition.Play(1.5f, Easing.Cubic, Direction.Out);
+                        _logoRotation.Start(2f, 0f, -3.7f, Easing.Cubic, Direction.Out);
 
                         // Play randomly selected beatmap music preview
                         PlayMusic(_currentAudioKey);
-                        if (_audioTweeners.ContainsKey(_currentAudioKey))
-                            _audioTweeners[_currentAudioKey].Restart(2.5f, _targetVolume, Easing.Cubic, Direction.Out);
-                        else
-                            SetMusicVolume(_currentAudioKey, _targetVolume);
                         SeekMusic(_currentAudioKey, _beatmap.PreviewTime / 1000f);
+                        if (_audioTweeners.ContainsKey(_currentAudioKey))
+                            _audioTweeners[_currentAudioKey].Restart(3.5f, _targetVolume, Easing.Cubic, Direction.Out);
+                    }
 
-                        // Trigger logo beating immediately!
+                    // Complete intro and play selected song
+                    if (progress >= 0.97f || (_transitionFired && !_welcomeTransition.IsPlaying))
+                    {
+                        _inIntro = false;
+                        StopMusic("welcome");
                         _logoTweener.SetValue(1.0f);
                     }
                 }

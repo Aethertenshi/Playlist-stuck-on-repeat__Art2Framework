@@ -48,6 +48,19 @@ namespace CoreGame
         private List<TaikoNote> _notes = new List<TaikoNote>();
         private List<FloatingText> _floatingTexts = new List<FloatingText>();
 
+        // --- Hit Error Bar & Unstable Rate ---
+        private Frame _hitErrorBarBg = null!;
+        private Frame _hitErrorBarOk = null!;
+        private Frame _hitErrorBarGood = null!;
+        private Frame _hitErrorBarPerfect = null!;
+        private Frame _avgIndicator = null!;
+        private TextFrame _urText = null!;
+
+        private List<HitErrorTick> _hitTicks = new List<HitErrorTick>();
+        private List<double> _allHitErrors = new List<double>();
+        private double _rollingAverageError = 0f;
+        private float _judgementRingScale = 1.0f;
+
         public TaikoPlayfield(Image circleTexture, string fontName = "gsans_bold")
         {
             _circleTexture = circleTexture;
@@ -95,6 +108,63 @@ namespace CoreGame
             children.Add(_judgementRing);
             children.Add(_scoreUI);
             children.Add(_comboUI);
+
+            // 3. Build Hit Error Bar & UR UI
+            _hitErrorBarBg = new Frame
+            {
+                color = new Color(20, 20, 20, 160),
+                anchorX = AnchorX.Center,
+                anchorY = AnchorY.Center
+            };
+
+            _hitErrorBarOk = new Frame
+            {
+                color = new Color(255, 150, 50, 60),
+                anchorX = AnchorX.Center,
+                anchorY = AnchorY.Center
+            };
+
+            _hitErrorBarGood = new Frame
+            {
+                color = new Color(50, 220, 100, 100),
+                anchorX = AnchorX.Center,
+                anchorY = AnchorY.Center
+            };
+
+            _hitErrorBarPerfect = new Frame
+            {
+                color = new Color(50, 150, 255, 160),
+                anchorX = AnchorX.Center,
+                anchorY = AnchorY.Center
+            };
+
+            _avgIndicator = new Frame
+            {
+                color = Color.White,
+                anchorX = AnchorX.Center,
+                anchorY = AnchorY.Center,
+                alpha = 0f
+            };
+
+            _urText = new TextFrame
+            {
+                fontName = _fontName,
+                text = "UR: --",
+                color = new Color(220, 220, 220, 255),
+                anchorX = AnchorX.Center,
+                anchorY = AnchorY.Bottom,
+                textAnchorX = AnchorX.Center,
+                textAnchorY = AnchorY.Bottom,
+                scale = 1.0f
+            };
+
+            _hitErrorBarBg.children.Add(_hitErrorBarOk);
+            _hitErrorBarBg.children.Add(_hitErrorBarGood);
+            _hitErrorBarBg.children.Add(_hitErrorBarPerfect);
+            _hitErrorBarBg.children.Add(_avgIndicator);
+            _hitErrorBarBg.children.Add(_urText);
+
+            children.Add(_hitErrorBarBg);
         }
 
         // --- Initialization ---
@@ -176,6 +246,17 @@ namespace CoreGame
 
             foreach (var fText in _floatingTexts) children.Remove(fText.Node);
             _floatingTexts.Clear();
+
+            // Reset Hit Error Bar & Ticks state
+            foreach (var tick in _hitTicks)
+            {
+                _hitErrorBarBg.children.Remove(tick.VisualNode);
+            }
+            _hitTicks.Clear();
+            _allHitErrors.Clear();
+            _rollingAverageError = 0f;
+            _urText.text = "UR: --";
+            _judgementRingScale = 1.0f;
         }
         public override void Draw(float dt, Vector2 parentSize, Vector2 parentOrigin)
         {
@@ -208,11 +289,55 @@ namespace CoreGame
             _rightTrack.size = new UDim2(1f, 0f, -currentJudgeOffsetX, 4f * GlobalScale);
             _rightTrack.position = new UDim2(0f, 0.5f, currentJudgeOffsetX, 0f);
 
-            _judgementRing.size = new UDim2(0f, 0f, currentNoteScale, currentNoteScale);
+            // Smoothly decay the judgement ring pulse scale back to 1.0f
+            _judgementRingScale += (1.0f - _judgementRingScale) * (dt * 15f);
+
+            _judgementRing.size = new UDim2(0f, 0f, currentNoteScale * _judgementRingScale, currentNoteScale * _judgementRingScale);
             _judgementRing.position = new UDim2(0f, 0.5f, currentJudgeOffsetX, 0f);
 
             _scoreUI.scale = 2f * GlobalScale;
             _comboUI.scale = 1.8f * GlobalScale;
+
+            // Hit Error Bar Scaling
+            float barW = 320f * GlobalScale;
+            float barH = 8f * GlobalScale;
+
+            _hitErrorBarBg.size = new UDim2(0f, 0f, barW, barH);
+            _hitErrorBarBg.position = new UDim2(0.5f, 0f, 0.85f, 0f);
+            _hitErrorBarBg.alpha = this.alpha;
+
+            _hitErrorBarOk.size = new UDim2(1f, 0f, 1f, 0f);
+            _hitErrorBarGood.size = new UDim2(Window100 / Window50, 0f, 1f, 0f);
+            _hitErrorBarPerfect.size = new UDim2(Window300 / Window50, 0f, 1f, 0f);
+
+            _avgIndicator.size = new UDim2(0f, 0f, 2f * GlobalScale, 18f * GlobalScale);
+            float avgOffset = (float)(_rollingAverageError / Window50) * (barW * 0.5f);
+            _avgIndicator.position = new UDim2(0.5f, 0.5f, avgOffset, 0f);
+            _avgIndicator.alpha = _allHitErrors.Count > 0 ? this.alpha : 0f;
+
+            _urText.position = new UDim2(0.5f, 0f, 0f, -8f * GlobalScale);
+            _urText.scale = 0.9f * GlobalScale;
+            _urText.alpha = this.alpha;
+
+            // Update Hit Error Ticks
+            for (int i = _hitTicks.Count - 1; i >= 0; i--)
+            {
+                var tick = _hitTicks[i];
+                tick.Alpha -= dt * 0.5f; // Fades out over 2 seconds
+                
+                if (tick.Alpha <= 0f)
+                {
+                    _hitErrorBarBg.children.Remove(tick.VisualNode);
+                    _hitTicks.RemoveAt(i);
+                }
+                else
+                {
+                    tick.VisualNode.alpha = tick.Alpha * this.alpha;
+                    tick.VisualNode.size = new UDim2(0f, 0f, 2f * GlobalScale, 16f * GlobalScale);
+                    float tickOffset = (tick.LocalError / Window50) * (barW * 0.5f);
+                    tick.VisualNode.position = new UDim2(0.5f, 0.5f, tickOffset, 0f);
+                }
+            }
 
             // 3. Handle Esc to Menu
             if (Keyboard.IsKeyPressed(Keys.RightShift)) //[cite: 10]
@@ -234,6 +359,8 @@ namespace CoreGame
 
             if (hitPressed)
             {
+                _judgementRingScale = 1.22f; // Trigger highly responsive ring expand/shrink pulse!
+
                 var targetNote = _notes.FirstOrDefault(n =>
                     !n.IsProcessed &&
                     !n.IsHolding && // Don't re-target already holding notes
@@ -241,6 +368,9 @@ namespace CoreGame
 
                 if (targetNote != null)
                 {
+                    float signedError = (float)currentAudioTimeMs - (float)targetNote.TargetTimeMs;
+                    AddHitError(signedError);
+
                     if (targetNote.IsHold)
                     {
                         targetNote.IsHolding = true;
@@ -262,7 +392,7 @@ namespace CoreGame
                         targetNote.IsProcessed = true;
                         targetNote.IsHit = true;
 
-                        float error = Math.Abs((float)targetNote.TargetTimeMs - currentAudioTimeMs);
+                        float error = Math.Abs(signedError);
                         int hitValue = 0;
                         Color hitColor = Color.White;
 
@@ -530,7 +660,65 @@ namespace CoreGame
             });
         }
 
+        private void AddHitError(float errorMs)
+        {
+            errorMs = Math.Clamp(errorMs, -Window50, Window50);
+            _allHitErrors.Add(errorMs);
+
+            // Update rolling average error (last 20 hits)
+            int avgCount = Math.Min(_allHitErrors.Count, 20);
+            double sum = 0;
+            for (int i = _allHitErrors.Count - avgCount; i < _allHitErrors.Count; i++)
+            {
+                sum += _allHitErrors[i];
+            }
+            _rollingAverageError = sum / avgCount;
+
+            // Recalculate Unstable Rate (UR) = standard deviation * 10
+            if (_allHitErrors.Count > 1)
+            {
+                double mean = _allHitErrors.Average();
+                double variance = _allHitErrors.Select(x => (x - mean) * (x - mean)).Average();
+                double stdDev = Math.Sqrt(variance);
+                double ur = stdDev * 10.0;
+                _urText.text = $"UR: {ur:F2}";
+            }
+            else
+            {
+                _urText.text = "UR: 0.00";
+            }
+
+            // Determine tick color based on window
+            Color tickColor = new Color(255, 150, 50); // 50 Ok (Orange)
+            float absErr = Math.Abs(errorMs);
+            if (absErr <= Window300) tickColor = new Color(50, 200, 255); // 300 Perfect (Blue)
+            else if (absErr <= Window100) tickColor = new Color(100, 255, 100); // 100 Good (Green)
+
+            Frame tickNode = new Frame
+            {
+                color = tickColor,
+                anchorX = AnchorX.Center,
+                anchorY = AnchorY.Center,
+                alpha = 1.0f
+            };
+
+            _hitErrorBarBg.children.Add(tickNode);
+
+            _hitTicks.Add(new HitErrorTick
+            {
+                VisualNode = tickNode,
+                LocalError = errorMs,
+                Alpha = 1.0f
+            });
+        }
+
         // --- Internal Data Structures ---
+        private class HitErrorTick
+        {
+            public Frame VisualNode { get; set; } = null!;
+            public float LocalError { get; set; }
+            public float Alpha { get; set; } = 1.0f;
+        }
         private class TaikoNote
         {
             public double TargetTimeMs { get; set; }
