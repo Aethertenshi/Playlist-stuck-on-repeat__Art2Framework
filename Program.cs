@@ -20,12 +20,9 @@ using static ArtFrame.EffectsHelper;
 
 namespace CoreGame
 {
-    public class Runner
+    public class Program
     {
-        static void Main()
-        {
-            Engine.Run<MainGame>();
-        }
+        static void Main() => Engine.Run<MainGame>();
     }
 
     public class MainGame : IArt
@@ -105,6 +102,7 @@ namespace CoreGame
             LoadSFX("keypress3", "sounds/sfxs/key-press-3.mp3");
             LoadSFX("keypress4", "sounds/sfxs/key-press-4.mp3");
             LoadSFX("keydel", "sounds/sfxs/key-delete.mp3");
+            LoadSFX("play-click", "sounds/sfxs/menu-play-click.wav");
 
             LoadAtlasFont("gsans_bold", "fonts/googlesans_bold.json", "fonts/googlesans_bold.png");
             LoadAtlasFont("gsans", "fonts/googlesans.json", "fonts/googlesans.png");
@@ -118,7 +116,7 @@ namespace CoreGame
                 position = new UDim2(0.5f, 0.5f),
                 anchorX = AnchorX.Center,
                 anchorY = AnchorY.Center,
-                GlobalScale = 1.25f,
+                GlobalScale = 1.4f,
                 alpha = 0f // Start hidden
             };
             _taikofield.OnPlayHitSound = (hitSoundMask) =>
@@ -137,7 +135,7 @@ namespace CoreGame
                 // 2. Audio Transition: Jump back to menu preview and restore volume!
                 SeekMusic(_currentAudioKey, _beatmap.PreviewTime / 1000f);
                 if (_audioTweeners.ContainsKey(_currentAudioKey))
-                    _audioTweeners[_currentAudioKey].Restart(1.0f, _targetVolume, Easing.Cubic, Direction.Out);
+                    _audioTweeners[_currentAudioKey].Restart(1.6f, _targetVolume, Easing.Exponential, Direction.Out);
 
                 // 3. Tell the cinematic timeline to run backward
                 _isStarting = false;
@@ -147,8 +145,8 @@ namespace CoreGame
                 SetFrameRate(120);
 
                 //_rythmIndexer = new RhythmIndexer(new InterpolatingAudioClock(), new RhythmTracker(), () => GetMusicTimePlayed(_currentAudioKey)) { Beatmap = _beatmap, MusicOffset = -55.35f };
-                _startShrinkTweener.Restart(1.2f, 0f, Easing.Exponential, Direction.Out);
-                _startTransitionTweener.Restart(1.2f, 0f, Easing.Exponential, Direction.Out);
+                _startShrinkTweener.Restart(1.5f, 0f, Easing.Exponential, Direction.Out);
+                _startTransitionTweener.Restart(1.5f, 0f, Easing.Exponential, Direction.Out);
             };
 
             // Bind the update loop directly to the Frame component
@@ -1051,7 +1049,7 @@ namespace CoreGame
             if (Math.Abs(_actualMusicSpeed - _speedMultiplier) > 0.0001f)
             {
                 // Exponential decay smoothing (feels natural for audio)
-                _actualMusicSpeed += (_speedMultiplier - _actualMusicSpeed) * (dt * 12f);
+                _actualMusicSpeed += (_speedMultiplier - _actualMusicSpeed) * (dt * 8f);
 
                 // Snap to target if it gets extremely close to save CPU calls
                 if (Math.Abs(_actualMusicSpeed - _speedMultiplier) <= 0.001f)
@@ -1066,7 +1064,10 @@ namespace CoreGame
             // --- Game Start Sequence (Press TAB) ---
             if (!_isStarting && Keyboard.IsKeyPressed(Keys.Tab))
             {
-                PlaySFX("select"); // Optional feedback
+                SetInputFramerate(900);
+                SetFrameRate(500);
+
+                PlaySFX("play-click"); // Optional feedback
                 _isStarting = true;
                 _startPhase = 1;
                 _startTimer = 0f;
@@ -1076,11 +1077,11 @@ namespace CoreGame
                 _modifiersTweener.Restart(0.5f, 0f, Easing.Exponential, Direction.Out);
 
                 // 2. Trigger Phase 1 (UI Fades out, Cover slides to center, bgDrop darkens)
-                _startTransitionTweener.Restart(1.2f, 1.0f, Easing.Exponential, Direction.Out);
+                _startTransitionTweener.Restart(1.5f, 1.0f, Easing.Exponential, Direction.Out);
 
                 // 3. Fade out the music smoothly
                 if (_audioTweeners.ContainsKey(_currentAudioKey))
-                    _audioTweeners[_currentAudioKey].Restart(1.5f, 0f, Easing.Cubic, Direction.Out);
+                    _audioTweeners[_currentAudioKey].Restart(1.5f, 0f, Easing.Exponential, Direction.Out);
             }
 
             if (_isStarting)
@@ -1104,13 +1105,10 @@ namespace CoreGame
                     if (_audioTweeners.ContainsKey(_currentAudioKey))
                     {
                         StopMusic(_currentAudioKey);
-                        _audioTweeners[_currentAudioKey].Restart(0.5f, _targetVolume, Easing.Cubic, Direction.Out);
+                        _audioTweeners[_currentAudioKey].Restart(0.5f, _targetVolume, Easing.Exponential, Direction.Out);
                         SeekMusic(_currentAudioKey, 0f);
                         PlayMusic(_currentAudioKey);
                     }
-
-                    SetInputFramerate(900);
-                    SetFrameRate(500);
 
                     // 1. Recycle the existing rhythm indexer and tell it to wait for 0.0s!
                     _rythmIndexer.Beatmap = _beatmap;

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using ArtFrame.ArtTypes;
@@ -100,28 +100,54 @@ namespace CoreGame
         // --- Initialization ---
         public void LoadBeatmap(OsuBeatmap beatmap)
         {
-            foreach (var note in _notes) children.Remove(note.VisualNode);
+            foreach (var note in _notes)
+            {
+                children.Remove(note.VisualNode);
+                if (note.HoldBodyNode != null) children.Remove(note.HoldBodyNode);
+            }
             _notes.Clear();
             _introAlpha = 0f;
 
-            // Extract ONLY the timing data[cite: 9]
+            // Extract timing data & support hold notes
             foreach (OsuHitObject hitObject in beatmap.HitObjects)
             {
+                bool isHold = hitObject.ObjectType == HitObjectType.Hold;
+                double duration = 0;
+                Frame? holdBody = null;
+
+                if (isHold && hitObject is OsuSlider slider)
+                {
+                    duration = slider.DurationMs;
+                    holdBody = new Frame
+                    {
+                        color = new Color(255, 180, 50, 100), // Beautiful semi-transparent warm yellow/orange
+                        anchorX = AnchorX.Left,
+                        anchorY = AnchorY.Center,
+                        position = new UDim2(0f, 0.5f, 9999f, 0f),
+                        alpha = 0f
+                    };
+                    children.Add(holdBody); // Added first so it renders behind the note head
+                }
+
                 var noteVisual = new ImageFrame
                 {
                     texture = _circleTexture,
-                    color = new Color(255, 235, 100, 255),
+                    color = isHold ? new Color(255, 180, 50, 255) : new Color(255, 235, 100, 255),
                     anchorX = AnchorX.Center,
                     anchorY = AnchorY.Center,
                     fit = ObjectFit.Contain,
-                    position = new UDim2(0f, 0.5f, 9999f, 0f)
+                    position = new UDim2(0f, 0.5f, 9999f, 0f),
+                    alpha = 0f
                 };
 
                 _notes.Add(new TaikoNote
                 {
                     TargetTimeMs = hitObject.Time,
-                    HitSoundMask = hitObject.HitSound, // Grabs the bitmask from OsuLib[cite: 9]
-                    VisualNode = noteVisual
+                    HitSoundMask = hitObject.HitSound, // Grabs the bitmask from OsuLib
+                    VisualNode = noteVisual,
+                    IsHold = isHold,
+                    DurationMs = duration,
+                    HoldBodyNode = holdBody
                 });
 
                 children.Add(noteVisual);
@@ -139,8 +165,12 @@ namespace CoreGame
             _scoreUI.text = "0";
             _comboUI.text = "0x";
 
-            // Clean up all dynamically generated nodes
-            foreach (var note in _notes) children.Remove(note.VisualNode);
+            // Clean up all dynamically generated nodes (including hold note tracks)
+            foreach (var note in _notes)
+            {
+                children.Remove(note.VisualNode);
+                if (note.HoldBodyNode != null) children.Remove(note.HoldBodyNode);
+            }
             _notes.Clear();
 
             foreach (var fText in _floatingTexts) children.Remove(fText.Node);
@@ -156,9 +186,16 @@ namespace CoreGame
             // 1. Smooth Intro Fade-In
             if (_introAlpha < 1f)
             {
-                _introAlpha = Math.Min(1f, _introAlpha + (dt * .025f));
+                _introAlpha = Math.Min(1f, _introAlpha + (dt * 2.0f)); // Smooth 500ms fade-in
                 this.alpha = _introAlpha;
             }
+
+            // Propagate playfield alpha to static children
+            _leftTrack.alpha = this.alpha;
+            _rightTrack.alpha = this.alpha;
+            _judgementRing.alpha = this.alpha;
+            _scoreUI.alpha = this.alpha;
+            _comboUI.alpha = this.alpha;
 
             // 2. Dynamic Runtime Scaling
             float currentNoteScale = BaseNoteScale * GlobalScale;
@@ -198,69 +235,196 @@ namespace CoreGame
             {
                 var targetNote = _notes.FirstOrDefault(n =>
                     !n.IsProcessed &&
+                    !n.IsHolding && // Don't re-target already holding notes
                     Math.Abs(n.TargetTimeMs - currentAudioTimeMs) <= Window50);
 
                 if (targetNote != null)
                 {
-                    targetNote.IsProcessed = true;
-                    targetNote.IsHit = true;
+                    if (targetNote.IsHold)
+                    {
+                        targetNote.IsHolding = true;
+                        targetNote.HoldLastTickTime = currentAudioTimeMs;
 
-                    float error = Math.Abs((float)targetNote.TargetTimeMs - currentAudioTimeMs);
-                    int hitValue = 0;
-                    Color hitColor = Color.White;
+                        OnPlayHitSound?.Invoke(targetNote.HitSoundMask);
 
-                    // Calculate Judgement
-                    if (error <= Window300) { hitValue = 300; hitColor = new Color(50, 200, 255); }
-                    else if (error <= Window100) { hitValue = 100; hitColor = new Color(100, 255, 100); }
-                    else if (error <= Window50) { hitValue = 50; hitColor = new Color(255, 150, 50); }
+                        Combo++;
+                        Score += 150 * Combo; // High score reward for hold note head hit
+                        _scoreUI.text = Score.ToString();
+                        _comboUI.text = $"{Combo}x";
 
-                    // Apply Score & Sound
-                    Combo++;
-                    Score += hitValue * Combo;
-                    _scoreUI.text = Score.ToString();
-                    _comboUI.text = $"{Combo}x";
+                        // Trigger visual splash text
+                        targetNote.Velocity = new Vector2(-150f, -400f) * GlobalScale;
+                        SpawnFloatingText("Hold!", new Color(255, 180, 50), targetNote.Velocity * 0.8f, currentJudgeOffsetX);
+                    }
+                    else
+                    {
+                        targetNote.IsProcessed = true;
+                        targetNote.IsHit = true;
 
-                    OnPlayHitSound?.Invoke(targetNote.HitSoundMask); // Fire sound event!
+                        float error = Math.Abs((float)targetNote.TargetTimeMs - currentAudioTimeMs);
+                        int hitValue = 0;
+                        Color hitColor = Color.White;
 
-                    // Fling Upwards & slightly left
-                    targetNote.Velocity = new Vector2(-150f, -600f) * GlobalScale;
-                    targetNote.VisualNode.color = new Color(255, 235, 100, 255) * 0.4f;
+                        // Calculate Judgement
+                        if (error <= Window300) { hitValue = 300; hitColor = new Color(50, 200, 255); }
+                        else if (error <= Window100) { hitValue = 100; hitColor = new Color(100, 255, 100); }
+                        else if (error <= Window50) { hitValue = 50; hitColor = new Color(255, 150, 50); }
 
-                    // Spawn physical floating text
-                    SpawnFloatingText(hitValue.ToString(), hitColor, targetNote.Velocity * 0.8f, currentJudgeOffsetX);
+                        // Apply Score & Sound
+                        Combo++;
+                        Score += hitValue * Combo;
+                        _scoreUI.text = Score.ToString();
+                        _comboUI.text = $"{Combo}x";
+
+                        OnPlayHitSound?.Invoke(targetNote.HitSoundMask); // Fire sound event!
+
+                        // Fling Upwards & slightly left
+                        targetNote.Velocity = new Vector2(-150f, -600f) * GlobalScale;
+                        targetNote.VisualNode.color = new Color(255, 235, 100, 255) * 0.4f;
+
+                        // Spawn physical floating text
+                        SpawnFloatingText(hitValue.ToString(), hitColor, targetNote.Velocity * 0.8f, currentJudgeOffsetX);
+                    }
                 }
             }
 
-            // 5. Update Notes & Miss Detection
+            // 5. Update Notes & Miss/Holding Detection
             foreach (var note in _notes)
             {
                 if (!note.IsProcessed)
                 {
-                    if (currentAudioTimeMs > note.TargetTimeMs + Window50) // Miss
+                    if (note.IsHolding)
                     {
-                        note.IsProcessed = true;
-                        note.IsHit = false;
+                        // Check if the user is still holding one of the gameplay keys
+                        bool stillHolding = false;
+                        foreach (var key in HitKeys)
+                        {
+                            if (Keyboard.IsKeyDown(key))
+                            {
+                                stillHolding = true;
+                                break;
+                            }
+                        }
 
-                        Combo = 0; // Break combo
-                        _comboUI.text = $"{Combo}x";
+                        // Check if hold duration has finished successfully
+                        if (currentAudioTimeMs >= note.TargetTimeMs + note.DurationMs)
+                        {
+                            note.IsProcessed = true;
+                            note.IsHit = true;
+                            note.IsHolding = false;
 
-                        note.Velocity = new Vector2(-150f, 600f) * GlobalScale; // Fling down
-                        note.VisualNode.color = new Color(255, 235, 100, 255) * 0.4f;
+                            // Completion bonus
+                            Combo++;
+                            Score += 300 * Combo;
+                            _scoreUI.text = Score.ToString();
+                            _comboUI.text = $"{Combo}x";
 
-                        SpawnFloatingText("X", new Color(255, 50, 50), note.Velocity * 0.8f, currentJudgeOffsetX);
+                            OnPlayHitSound?.Invoke(note.HitSoundMask);
+
+                            note.Velocity = new Vector2(-150f, -600f) * GlobalScale;
+                            note.VisualNode.color = new Color(255, 180, 50, 255) * 0.4f;
+
+                            SpawnFloatingText("Great!", new Color(50, 255, 100), note.Velocity * 0.8f, currentJudgeOffsetX);
+
+                            if (note.HoldBodyNode != null)
+                            {
+                                children.Remove(note.HoldBodyNode);
+                                note.HoldBodyNode = null;
+                            }
+                        }
+                        else if (!stillHolding) // Early release -> break combo & fail!
+                        {
+                            note.IsProcessed = true;
+                            note.IsHit = false;
+                            note.IsHolding = false;
+
+                            Combo = 0;
+                            _comboUI.text = $"{Combo}x";
+
+                            note.Velocity = new Vector2(-150f, 600f) * GlobalScale;
+                            note.VisualNode.color = new Color(255, 180, 50, 255) * 0.4f;
+
+                            SpawnFloatingText("Let Let Go!", new Color(255, 50, 50), note.Velocity * 0.8f, currentJudgeOffsetX);
+
+                            if (note.HoldBodyNode != null)
+                            {
+                                note.HoldBodyNode.color = note.HoldBodyNode.color * 0.4f;
+                            }
+                        }
+                        else // Still successfully holding!
+                        {
+                            // Hold circle stays inside judgement ring
+                            note.CurrentOffset = 0f;
+
+                            // Passive score tick every 100ms
+                            if (currentAudioTimeMs - note.HoldLastTickTime >= 100f)
+                            {
+                                Score += 10 * Combo;
+                                _scoreUI.text = Score.ToString();
+                                note.HoldLastTickTime = currentAudioTimeMs;
+                                OnPlayHitSound?.Invoke(0); // Soft/tick sound feedback
+                            }
+
+                            // Shrink the hold bar from the left
+                            if (note.HoldBodyNode != null)
+                            {
+                                float remainingTime = (float)(note.TargetTimeMs + note.DurationMs - currentAudioTimeMs);
+                                float remainingWidth = Math.Max(0f, remainingTime * ScrollSpeed * GlobalScale);
+                                note.HoldBodyNode.size = new UDim2(0f, remainingWidth, currentNoteScale * 0.7f, 0f);
+                                note.HoldBodyNode.position = new UDim2(0f, 0.5f, currentJudgeOffsetX, 0f);
+                                note.HoldBodyNode.alpha = this.alpha;
+                            }
+                        }
                     }
-                    else // Still Approaching
+                    else // Still approaching
                     {
-                        float timeDiff = (float)note.TargetTimeMs - currentAudioTimeMs;
-                        note.CurrentOffset = timeDiff * ScrollSpeed * GlobalScale;
+                        if (currentAudioTimeMs > note.TargetTimeMs + Window50) // Missed start hit window
+                        {
+                            note.IsProcessed = true;
+                            note.IsHit = false;
+
+                            Combo = 0;
+                            _comboUI.text = $"{Combo}x";
+
+                            note.Velocity = new Vector2(-150f, 600f) * GlobalScale; // Gravity fling down
+                            note.VisualNode.color = (note.IsHold ? new Color(255, 180, 50, 255) : new Color(255, 235, 100, 255)) * 0.4f;
+
+                            SpawnFloatingText("Miss", new Color(255, 50, 50), note.Velocity * 0.8f, currentJudgeOffsetX);
+
+                            if (note.HoldBodyNode != null)
+                            {
+                                note.HoldBodyNode.color = note.HoldBodyNode.color * 0.4f;
+                            }
+                        }
+                        else // Moving towards the judgement ring
+                        {
+                            float timeDiff = (float)note.TargetTimeMs - currentAudioTimeMs;
+                            note.CurrentOffset = timeDiff * ScrollSpeed * GlobalScale;
+                            note.VisualNode.alpha = this.alpha;
+
+                            // Draw hold track extending to the right of the note
+                            if (note.IsHold && note.HoldBodyNode != null)
+                            {
+                                float bodyWidth = (float)(note.DurationMs * ScrollSpeed * GlobalScale);
+                                note.HoldBodyNode.size = new UDim2(0f, bodyWidth, currentNoteScale * 0.7f, 0f);
+                                note.HoldBodyNode.position = new UDim2(0f, 0.5f, currentJudgeOffsetX + note.CurrentOffset + note.PositionOffset.X, note.PositionOffset.Y);
+                                note.HoldBodyNode.alpha = this.alpha;
+                            }
+                        }
                     }
                 }
-                else // Apply Physics to flung notes
+                else // Apply physics gravity fling animations
                 {
-                    note.Velocity += new Vector2(0f, 1500f * dt * GlobalScale); // Gravity
+                    note.Velocity += new Vector2(0f, 1500f * dt * GlobalScale);
                     note.PositionOffset += note.Velocity * dt;
                     note.Alpha = Math.Max(0f, note.Alpha - (dt * 3f));
-                    note.VisualNode.alpha = note.Alpha;
+                    note.VisualNode.alpha = note.Alpha * this.alpha;
+
+                    if (note.IsHold && note.HoldBodyNode != null)
+                    {
+                        note.HoldBodyNode.position = new UDim2(0f, 0.5f, currentJudgeOffsetX + note.CurrentOffset + note.PositionOffset.X, note.PositionOffset.Y);
+                        note.HoldBodyNode.alpha = note.Alpha * this.alpha;
+                    }
                 }
 
                 note.VisualNode.size = new UDim2(0f, 0f, currentNoteScale, currentNoteScale);
@@ -275,7 +439,7 @@ namespace CoreGame
                 fText.PositionOffset += fText.Velocity * dt;
                 fText.Alpha -= dt * 2.5f;
 
-                fText.Node.alpha = Math.Max(0f, fText.Alpha);
+                fText.Node.alpha = Math.Max(0f, fText.Alpha) * this.alpha;
                 fText.Node.position = new UDim2(0f, 0.5f, fText.StartX + fText.PositionOffset.X, fText.PositionOffset.Y);
 
                 if (fText.Alpha <= 0f)
@@ -316,10 +480,17 @@ namespace CoreGame
         {
             public double TargetTimeMs { get; set; }
             public float CurrentOffset { get; set; }
-            public int HitSoundMask { get; set; } // Tracks .osu bits (1, 2, 4, 8)[cite: 9]
+            public int HitSoundMask { get; set; } // Tracks .osu bits (1, 2, 4, 8)
 
             public bool IsProcessed { get; set; }
             public bool IsHit { get; set; }
+
+            // Hold note properties
+            public bool IsHold { get; set; }
+            public double DurationMs { get; set; }
+            public Frame? HoldBodyNode { get; set; }
+            public bool IsHolding { get; set; }
+            public double HoldLastTickTime { get; set; }
 
             public Vector2 PositionOffset { get; set; } = Vector2.Zero;
             public Vector2 Velocity { get; set; } = Vector2.Zero;
