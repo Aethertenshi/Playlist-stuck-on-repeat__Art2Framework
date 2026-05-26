@@ -7,7 +7,7 @@ using ArtFrame.UIModifier;
 using ArtFrame.UserInterface;
 using OppaiSharp;
 using OsuLib;
-using System.Numerics;
+
 using static ArtFrame.AudioHelper;
 using static ArtFrame.EffectsHelper;
 using static ArtFrame.FontHelper;
@@ -35,6 +35,7 @@ namespace CoreGame
         private float _starRating = 0f;
         private float _settingsYOffset = 15f;
         private TaikoPlayfield _taikofield;
+        private ImageFrame _logoUI = null!;
 
         // Rhythm State
         private readonly OsuParser _parser = new();
@@ -62,6 +63,14 @@ namespace CoreGame
         private bool _transitionFired = false;
         private GridTransitionRadial _welcomeTransition = null!;
         private Tweener _logoRotation = AddTween(new Tweener());
+        private float _logoSpin = 0f;
+
+        // Interactive Visual Suite States
+        private float _parallaxX = 0f;
+        private float _parallaxY = 0f;
+        private float _bgBeatScale = 1.0f;
+        private readonly List<LogoShockwave> _shockwaves = new();
+        private readonly List<MenuParticle> _menuParticles = new();
 
         // Phase 1: Cover centers, UI hides, BG darkens
         private Tweener _startTransitionTweener = AddTween(new Tweener());
@@ -170,8 +179,8 @@ namespace CoreGame
             var scannedBeatmaps = scanner.ScanLazy(SongsPath).ToList();
             if (scannedBeatmaps.Count > 0)
             {
-                var rand = new Random();
-                _beatmap = scannedBeatmaps[rand.Next(scannedBeatmaps.Count)];
+                var beatmapRand = new Random();
+                _beatmap = scannedBeatmaps[beatmapRand.Next(scannedBeatmaps.Count)];
             }
             else
             {
@@ -228,14 +237,15 @@ namespace CoreGame
                         //float currentTargetSize = ArtMathHelper.Lerp(500f, 450f, _settingsTweener.CurrentValue);
 
                         // 2. Run your master layout Lerp using the dynamic target size
-                        e.size = UDim2.Lerp(UDim2.FromScale(1f, 1f), UDim2.FromOffset(500f, 500f), _bgTweener.CurrentValue);
+                        float scaleFactor = _isCoverView ? 1f : _bgBeatScale;
+                        e.size = UDim2.Lerp(UDim2.FromScale(1f, 1f), UDim2.FromOffset(500f, 500f), _bgTweener.CurrentValue) * scaleFactor;
 
                         //float currentTargetX = ArtMathHelper.Lerp(0.38f, 0.42f, _settingsTweener.CurrentValue);
                         float activePanelValue = MathF.Max(_settingsTweener.CurrentValue, _modifiersTweener.CurrentValue);
                         float baseTargetX = ArtMathHelper.Lerp(0.38f, 0.42f, activePanelValue);
                         float currentTargetX = ArtMathHelper.Lerp(baseTargetX, 0.5f, _startTransitionTweener.CurrentValue);
 
-                        e.position = UDim2.Lerp(UDim2.FromScale(0.5f, 0.5f), UDim2.FromScale(currentTargetX, 0.5f), _bgTweener.CurrentValue);
+                        e.position = UDim2.Lerp(UDim2.FromScale(0.5f, 0.5f), UDim2.FromScale(currentTargetX, 0.5f), _bgTweener.CurrentValue) + UDim2.FromOffset(-_parallaxX, -_parallaxY);
 
                         //e.position = UDim2.Lerp(UDim2.FromScale(0.5f, 0.5f), UDim2.FromScale(0.38f, 0.5f), _bgTweener.CurrentValue);
 
@@ -272,7 +282,7 @@ namespace CoreGame
                     e.alpha = 1f - _startShrinkTweener.CurrentValue;
 
                     // Input Polling
-                    if (Keyboard.IsKeyPressed(Keys.Space))
+                    if (Keyboard.IsKeyPressed(Keys.Space) && !_isStarting)
                     {
                         _isCoverView = !_isCoverView;
                         _bgTweener.Restart(duration: 0.7f, targetValue: _isCoverView ? 1.0f : 0f, Easing.Exponential, Direction.Out);
@@ -281,7 +291,32 @@ namespace CoreGame
             };
             blurBg.children.Add(bg);
 
-            ImageFrame logo = new ImageFrame
+            // Initialize floating lens bokeh particles (Number 5)
+            Random rand = new Random();
+            for (int i = 0; i < 25; i++)
+            {
+                float size = (float)rand.NextDouble() * 15f + 8f; // size between 8px and 23px
+                Frame partNode = new Frame
+                {
+                    color = new Color(255, 255, 255, (byte)rand.Next(30, 75)), // soft glowing alpha
+                    anchorX = AnchorX.Center,
+                    anchorY = AnchorY.Center,
+                    size = new UDim2(0f, 0f, size, size),
+                    position = new UDim2((float)rand.NextDouble(), (float)rand.NextDouble())
+                };
+                
+                blurBg.children.Add(partNode);
+                _menuParticles.Add(new MenuParticle
+                {
+                    VisualNode = partNode,
+                    DriftSpeedX = (float)(rand.NextDouble() * 2.0 - 1.0) * 0.35f,
+                    DriftSpeedY = (float)(rand.NextDouble() * 2.0 - 1.0) * 0.35f,
+                    BaseSize = size,
+                    PulsePhase = (float)(rand.NextDouble() * Math.PI * 2)
+                });
+            }
+
+            _logoUI = new ImageFrame
             {
                 texture = LoadImage("logo", "content/logo_game.png"),
                 color = new Color(255, 255, 255),
@@ -290,18 +325,19 @@ namespace CoreGame
                 fit = ObjectFit.Cover,
                 onUpdate = (e, dt) =>
                 {
+                    _logoSpin += dt * 0.12f; // Slowly rotate the logo continuously
                     if (_inIntro)
                     {
                         e.alpha = _introAlpha;
                         e.size = new UDim2(0.35f, 0.35f);
                         e.position = UDim2.FromScale(0.5f, 0.5f);
-                        e.rotation = _logoRotation.CurrentValue;
+                        e.rotation = _logoRotation.CurrentValue + _logoSpin;
                     }
                     else
                     {
                         // Calculate dynamic size
                         e.size = (new UDim2(0.35f, 0.35f) * MathF.Max(_logoTweener.CurrentValue, _startTransitionTweener.CurrentValue)) * MathF.Max((1f - _bgTweener.CurrentValue), 0.35f);
-                        e.rotation = _logoRotation.CurrentValue * (1f - _bgTweener.CurrentValue);
+                        e.rotation = (_logoRotation.CurrentValue * (1f - _bgTweener.CurrentValue)) + _logoSpin;
 
                         // Match the background's position logic perfectly so it stays centered inside the cover
                         float activePanelValue = MathF.Max(_settingsTweener.CurrentValue, _modifiersTweener.CurrentValue);
@@ -309,7 +345,7 @@ namespace CoreGame
                         float currentTargetX = ArtMathHelper.Lerp(baseTargetX, 0.5f, _startTransitionTweener.CurrentValue);
 
                         e.alpha = 1f - _startShrinkTweener.CurrentValue;
-                        e.position = UDim2.Lerp(UDim2.FromScale(0.5f, 0.5f), UDim2.FromScale(currentTargetX, 0.5f), _bgTweener.CurrentValue);
+                        e.position = UDim2.Lerp(UDim2.FromScale(0.5f, 0.5f), UDim2.FromScale(currentTargetX, 0.5f), _bgTweener.CurrentValue) + UDim2.FromOffset(_parallaxX * 0.6f, _parallaxY * 0.6f);
                     }
                 }
             };
@@ -1026,7 +1062,7 @@ namespace CoreGame
             Add(blurBg);
             Add(_welcomeTransition); // Renders over the background but behind the logo
 
-            Add(logo);
+            Add(_logoUI);
             Add(startPrompt);
 
             Add(settingsPanel);
@@ -1054,7 +1090,29 @@ namespace CoreGame
             _rythmIndexer.OnBeat += (beatIndex) =>
             {
                 if (_inIntro) return;
-                if (!_isCoverView) PlaySFX(_rythmIndexer.IsDownbeat ? "dwbeat" : "beat");
+                
+                if (!_isCoverView)
+                {
+                    PlaySFX(_rythmIndexer.IsDownbeat ? "dwbeat" : "beat");
+                    _bgBeatScale = _rythmIndexer.IsDownbeat ? 1.015f : 1.008f; // epilepsy friendly subtle zoom!
+                    
+                    // Spawn a logo shockwave on downbeats (Number 4)
+                    if (_rythmIndexer.IsDownbeat)
+                    {
+                        var waveNode = new ImageFrame
+                        {
+                            texture = LoadImage("logo", "content/logo_game.png"),
+                            color = new Color(255, 255, 255, 120),
+                            anchorX = AnchorX.Center,
+                            anchorY = AnchorY.Center,
+                            fit = ObjectFit.Cover,
+                            alpha = 0.5f
+                        };
+                        Add(waveNode);
+                        _shockwaves.Add(new LogoShockwave { VisualNode = waveNode, Progress = 0f });
+                    }
+                }
+                
                 _logoTweener.SetValue(.93f);
                 _logoTweener.Restart(1.5f, 1f, Easing.Quintic, Direction.Out);
             };
@@ -1119,6 +1177,82 @@ namespace CoreGame
 
             _currentCoverColor = new Color((byte)_colorR, (byte)_colorG, (byte)_colorB);
 
+            // --- Interactive Parallax Tracking & Subtle Beat Decay ---
+            if (!_isCoverView && !_inIntro)
+            {
+                ArtFrame.ArtTypes.Vector2 mousePos = Mouse.Position;
+                float deltaX = mousePos.X - 960f;
+                float deltaY = mousePos.Y - 540f;
+                
+                float normX = Math.Clamp(deltaX / 960f, -1f, 1f);
+                float normY = Math.Clamp(deltaY / 540f, -1f, 1f);
+                
+                float targetParallaxX = normX * 16f; // max 16px parallax
+                float targetParallaxY = normY * 16f;
+                
+                _parallaxX += (targetParallaxX - _parallaxX) * (dt * 5f);
+                _parallaxY += (targetParallaxY - _parallaxY) * (dt * 5f);
+            }
+            else
+            {
+                // Smoothly decay parallax to zero when in cover view or intro
+                _parallaxX += (0f - _parallaxX) * (dt * 8f);
+                _parallaxY += (0f - _parallaxY) * (dt * 8f);
+            }
+
+            // Decay Background Beat Scale back to 1.0f
+            _bgBeatScale += (1.0f - _bgBeatScale) * (dt * 8f);
+
+            // Update Bokeh Particles (Number 5)
+            float particleSpeedMultiplier = _isCoverView ? 0f : (1f - _startTransitionTweener.CurrentValue);
+            float beatFlash = (_bgBeatScale - 1.0f) * 10f; // subtle flash expansion
+            
+            foreach (var part in _menuParticles)
+            {
+                float xOffset = part.DriftSpeedX * dt * 35f * particleSpeedMultiplier;
+                float yOffset = part.DriftSpeedY * dt * 35f * particleSpeedMultiplier;
+                
+                float newScaleX = part.VisualNode.position.ScaleX + (xOffset / 1920f);
+                float newScaleY = part.VisualNode.position.ScaleY + (yOffset / 1080f);
+                
+                if (newScaleX < -0.05f) newScaleX = 1.05f;
+                if (newScaleX > 1.05f) newScaleX = -0.05f;
+                if (newScaleY < -0.05f) newScaleY = 1.05f;
+                if (newScaleY > 1.05f) newScaleY = -0.05f;
+                
+                part.VisualNode.position = UDim2.FromScale(newScaleX, newScaleY);
+                part.PulsePhase += dt * 2.0f;
+                
+                float dynamicSize = part.BaseSize * (1.0f + MathF.Sin(part.PulsePhase) * 0.12f + beatFlash);
+                part.VisualNode.size = new UDim2(0f, 0f, dynamicSize, dynamicSize);
+                
+                float introFactor = _inIntro ? _introAlpha : 1f;
+                float viewFactor = _isCoverView ? 0f : (1f - _startTransitionTweener.CurrentValue);
+                part.VisualNode.alpha = introFactor * viewFactor * 0.7f; // keep them soft
+            }
+
+            // Update Logo Shockwaves (Number 4)
+            for (int i = _shockwaves.Count - 1; i >= 0; i--)
+            {
+                var wave = _shockwaves[i];
+                wave.Progress += dt * 2.5f; // completes in 400ms
+                if (wave.Progress >= 1f)
+                {
+                    Remove(wave.VisualNode);
+                    _shockwaves.RemoveAt(i);
+                }
+                else
+                {
+                    float scaleMultiplier = 1f + wave.Progress * 0.65f;
+                    float baseSizeScale = 0.35f * MathF.Max(_logoTweener.CurrentValue, _startTransitionTweener.CurrentValue);
+                    wave.VisualNode.size = new UDim2(baseSizeScale * scaleMultiplier, baseSizeScale * scaleMultiplier);
+                    
+                    wave.VisualNode.position = _logoUI.position;
+                    wave.VisualNode.rotation = _logoUI.rotation;
+                    wave.VisualNode.alpha = (1f - wave.Progress) * 0.5f;
+                }
+            }
+
             // --- Dynamic Audio Speed ---
             if (Math.Abs(_actualMusicSpeed - _speedMultiplier) > 0.0001f)
             {
@@ -1136,7 +1270,7 @@ namespace CoreGame
             }
 
             // --- Game Start Sequence (Press TAB) ---
-            if (!_isStarting && Keyboard.IsKeyPressed(Keys.Tab))
+            if (!_isStarting && Keyboard.IsKeyPressed(Keys.Tab) && _isCoverView)
             {
                 SetInputFramerate(900);
                 SetFrameRate(500);
@@ -1508,6 +1642,22 @@ namespace CoreGame
             if (ar < 8.0f) return new Color(255, 230, 118);
             if (ar < 9.5f) return new Color(255, 118, 118);
             return new Color(200, 118, 255);
+        }
+
+        // --- Custom Menu Visual Suite Structs ---
+        private class LogoShockwave
+        {
+            public ImageFrame VisualNode { get; set; } = null!;
+            public float Progress { get; set; } = 0f;
+        }
+
+        private class MenuParticle
+        {
+            public Frame VisualNode { get; set; } = null!;
+            public float DriftSpeedX { get; set; }
+            public float DriftSpeedY { get; set; }
+            public float BaseSize { get; set; }
+            public float PulsePhase { get; set; }
         }
     }
 }
