@@ -363,7 +363,7 @@ namespace CoreGame
                                 Score += 10 * Combo;
                                 _scoreUI.text = Score.ToString();
                                 note.HoldLastTickTime = currentAudioTimeMs;
-                                OnPlayHitSound?.Invoke(0); // Soft/tick sound feedback
+                                // Sound feedback is skipped here to prevent machine-gun spamming
                             }
 
                             // Shrink the hold bar from the left
@@ -371,7 +371,7 @@ namespace CoreGame
                             {
                                 float remainingTime = (float)(note.TargetTimeMs + note.DurationMs - currentAudioTimeMs);
                                 float remainingWidth = Math.Max(0f, remainingTime * ScrollSpeed * GlobalScale);
-                                note.HoldBodyNode.size = new UDim2(0f, remainingWidth, currentNoteScale * 0.7f, 0f);
+                                note.HoldBodyNode.size = new UDim2(0f, 0f, remainingWidth, currentNoteScale * 0.7f);
                                 note.HoldBodyNode.position = new UDim2(0f, 0.5f, currentJudgeOffsetX, 0f);
                                 note.HoldBodyNode.alpha = this.alpha;
                             }
@@ -379,22 +379,44 @@ namespace CoreGame
                     }
                     else // Still approaching
                     {
-                        if (currentAudioTimeMs > note.TargetTimeMs + Window50) // Missed start hit window
+                        if (currentAudioTimeMs > note.TargetTimeMs + Window50) // Passed start hit window
                         {
-                            note.IsProcessed = true;
-                            note.IsHit = false;
-
-                            Combo = 0;
-                            _comboUI.text = $"{Combo}x";
-
-                            note.Velocity = new Vector2(-150f, 600f) * GlobalScale; // Gravity fling down
-                            note.VisualNode.color = (note.IsHold ? new Color(255, 180, 50, 255) : new Color(255, 235, 100, 255)) * 0.4f;
-
-                            SpawnFloatingText("Miss", new Color(255, 50, 50), note.Velocity * 0.8f, currentJudgeOffsetX);
-
-                            if (note.HoldBodyNode != null)
+                            if (note.IsHold && !note.IsHolding)
                             {
-                                note.HoldBodyNode.color = note.HoldBodyNode.color * 0.4f;
+                                // It is an ignored hold note / drumroll!
+                                // Instead of flinging down under gravity and breaking combo, we let it scroll past smoothly!
+                                if (note.CurrentOffset < -currentJudgeOffsetX - 100f)
+                                {
+                                    note.IsProcessed = true; // Finally process it once it's far off-screen
+                                }
+                                else
+                                {
+                                    float timeDiff = (float)note.TargetTimeMs - currentAudioTimeMs;
+                                    note.CurrentOffset = timeDiff * ScrollSpeed * GlobalScale;
+                                    note.VisualNode.alpha = this.alpha * Math.Clamp(1.0f + (note.CurrentOffset / currentJudgeOffsetX), 0f, 1f); // Fade out as it passes left
+                                    
+                                    if (note.HoldBodyNode != null)
+                                    {
+                                        float bodyWidth = (float)(note.DurationMs * ScrollSpeed * GlobalScale);
+                                        note.HoldBodyNode.size = new UDim2(0f, 0f, bodyWidth, currentNoteScale * 0.7f);
+                                        note.HoldBodyNode.position = new UDim2(0f, 0.5f, currentJudgeOffsetX + note.CurrentOffset + note.PositionOffset.X, note.PositionOffset.Y);
+                                        note.HoldBodyNode.alpha = note.VisualNode.alpha;
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                // Regular note Miss
+                                note.IsProcessed = true;
+                                note.IsHit = false;
+
+                                Combo = 0;
+                                _comboUI.text = $"{Combo}x";
+
+                                note.Velocity = new Vector2(-150f, 600f) * GlobalScale; // Gravity fling down
+                                note.VisualNode.color = new Color(255, 235, 100, 255) * 0.4f;
+
+                                SpawnFloatingText("Miss", new Color(255, 50, 50), note.Velocity * 0.8f, currentJudgeOffsetX);
                             }
                         }
                         else // Moving towards the judgement ring
@@ -407,7 +429,7 @@ namespace CoreGame
                             if (note.IsHold && note.HoldBodyNode != null)
                             {
                                 float bodyWidth = (float)(note.DurationMs * ScrollSpeed * GlobalScale);
-                                note.HoldBodyNode.size = new UDim2(0f, bodyWidth, currentNoteScale * 0.7f, 0f);
+                                note.HoldBodyNode.size = new UDim2(0f, 0f, bodyWidth, currentNoteScale * 0.7f);
                                 note.HoldBodyNode.position = new UDim2(0f, 0.5f, currentJudgeOffsetX + note.CurrentOffset + note.PositionOffset.X, note.PositionOffset.Y);
                                 note.HoldBodyNode.alpha = this.alpha;
                             }
