@@ -117,7 +117,7 @@ namespace CoreGame
 
                 if (isHold && hitObject is OsuSlider slider)
                 {
-                    Console.WriteLine("Hold Note / Slider Duration: " + slider.DurationMs);
+                    //Console.WriteLine("Hold Note / Slider Duration: " + slider.DurationMs);
                     duration = slider.DurationMs;
                     holdBody = new Frame
                     {
@@ -333,19 +333,51 @@ namespace CoreGame
                                 note.HoldBodyNode = null;
                             }
                         }
-                        else if (!stillHolding) // Early release -> break combo & fail!
+                        else if (!stillHolding) // Early release -> check thresholds!
                         {
                             note.IsProcessed = true;
-                            note.IsHit = false;
                             note.IsHolding = false;
 
-                            Combo = 0;
-                            _comboUI.text = $"{Combo}x";
+                            double heldTime = currentAudioTimeMs - note.TargetTimeMs;
+                            double fraction = heldTime / note.DurationMs;
 
-                            note.Velocity = new Vector2(-150f, 600f) * GlobalScale;
-                            note.VisualNode.color = new Color(255, 180, 50, 255) * 0.4f;
+                            if (fraction >= 0.5) // Held 1/2 or more -> Good!
+                            {
+                                note.IsHit = true;
+                                Combo++;
+                                Score += 200 * Combo;
+                                _scoreUI.text = Score.ToString();
+                                _comboUI.text = $"{Combo}x";
 
-                            SpawnFloatingText("Let Let Go!", new Color(255, 50, 50), note.Velocity * 0.8f, currentJudgeOffsetX);
+                                note.Velocity = new Vector2(-150f, -400f) * GlobalScale; // Fling up slightly
+                                note.VisualNode.color = new Color(255, 180, 50, 255) * 0.4f;
+
+                                SpawnFloatingText("Good!", new Color(100, 255, 100), note.Velocity * 0.8f, currentJudgeOffsetX);
+                            }
+                            else if (fraction >= 0.333) // Held 1/3 or more -> Ok!
+                            {
+                                note.IsHit = true;
+                                Combo++;
+                                Score += 50 * Combo;
+                                _scoreUI.text = Score.ToString();
+                                _comboUI.text = $"{Combo}x";
+
+                                note.Velocity = new Vector2(-150f, -200f) * GlobalScale; // Fling up very slightly
+                                note.VisualNode.color = new Color(255, 180, 50, 255) * 0.4f;
+
+                                SpawnFloatingText("Ok!", new Color(255, 235, 100), note.Velocity * 0.8f, currentJudgeOffsetX);
+                            }
+                            else // Held less than 1/3 -> Miss!
+                            {
+                                note.IsHit = false;
+                                Combo = 0;
+                                _comboUI.text = $"{Combo}x";
+
+                                note.Velocity = new Vector2(-150f, 600f) * GlobalScale; // Fling down
+                                note.VisualNode.color = new Color(255, 180, 50, 255) * 0.4f;
+
+                                SpawnFloatingText("Let Go!", new Color(255, 50, 50), note.Velocity * 0.8f, currentJudgeOffsetX);
+                            }
 
                             if (note.HoldBodyNode != null)
                             {
