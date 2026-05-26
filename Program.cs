@@ -823,16 +823,7 @@ namespace CoreGame
                 }
             };
 
-            _rythmIndexer = new RhythmIndexer(_audioClock, _rhythmTracker, () => GetMusicTimePlayed(_currentAudioKey)) { Beatmap = _beatmap, MusicOffset = -55.35f };
-            _rythmIndexer.OnBeat += (beatIndex) =>
-            {
-                if (!_isCoverView) PlaySFX(_rythmIndexer.IsDownbeat ? "dwbeat" : "beat");
-                _logoTweener.SetValue(.93f);
-                _logoTweener.Restart(1.5f, 1f, Easing.Quintic, Direction.Out);
-            };
-
-            float starRating = GetRealStarRating(_rythmIndexer.Beatmap);
-            _starRating = starRating;
+            _starRating = GetRealStarRating(_beatmap);
 
             // --- Modifiers Panel ---
             ScrollingFrame modifiersPanel = new ScrollingFrame
@@ -1052,6 +1043,19 @@ namespace CoreGame
                 scannedCount++;
             }
 
+            // Initialize Rhythm Indexer early so it's not null when added to helperPool
+            _rythmIndexer = new RhythmIndexer(_audioClock, _rhythmTracker, () => GetMusicTimePlayed(_currentAudioKey))
+            {
+                Beatmap = _beatmap,
+                MusicOffset = -55.35f
+            };
+            _rythmIndexer.OnBeat += (beatIndex) =>
+            {
+                if (!_isCoverView) PlaySFX(_rythmIndexer.IsDownbeat ? "dwbeat" : "beat");
+                _logoTweener.SetValue(.93f);
+                _logoTweener.Restart(1.5f, 1f, Easing.Quintic, Direction.Out);
+            };
+
             AddHelper(_rythmIndexer);
 
             // Setup and Play Welcome intro audio
@@ -1097,7 +1101,7 @@ namespace CoreGame
                         // Play randomly selected beatmap music preview
                         PlayMusic(_currentAudioKey);
                         if (_audioTweeners.ContainsKey(_currentAudioKey))
-                            _audioTweeners[_currentAudioKey].Restart(0.8f, _targetVolume, Easing.Cubic, Direction.Out);
+                            _audioTweeners[_currentAudioKey].Restart(0.8f, _targetVolume, Easing.Exponential, Direction.Out);
                         else
                             SetMusicVolume(_currentAudioKey, _targetVolume);
                         SeekMusic(_currentAudioKey, _beatmap.PreviewTime / 1000f);
@@ -1312,7 +1316,7 @@ namespace CoreGame
                     minValue = -80f,
                     maxValue = 80f,
                     defaultValue = 0,
-                    currentValue = _rythmIndexer.MusicOffset,
+                    currentValue = -55.36f,
                     onUpdate = (e, dt) =>
                     {
                         byte r = (byte)(_currentCoverColor.R * 0.85f);
