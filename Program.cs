@@ -61,6 +61,7 @@ namespace CoreGame
         private float _introAlpha = 0f;
         private bool _transitionFired = false;
         private GridTransitionRadial _welcomeTransition = null!;
+        private float _logoRotation = 0f;
 
         // Phase 1: Cover centers, UI hides, BG darkens
         private Tweener _startTransitionTweener = AddTween(new Tweener());
@@ -289,18 +290,19 @@ namespace CoreGame
                 fit = ObjectFit.Cover,
                 onUpdate = (e, dt) =>
                 {
+                    _logoRotation += dt * 0.12f; // Slowly rotate the logo continuously
                     if (_inIntro)
                     {
                         e.alpha = _introAlpha;
-                        e.size = new UDim2(0.35f, 0.35f) * _logoTweener.CurrentValue;
+                        e.size = new UDim2(0.35f, 0.35f);
                         e.position = UDim2.FromScale(0.5f, 0.5f);
-                        e.rotation = 0f;
+                        e.rotation = _logoRotation;
                     }
                     else
                     {
                         // Calculate dynamic size
                         e.size = (new UDim2(0.35f, 0.35f) * MathF.Max(_logoTweener.CurrentValue, _startTransitionTweener.CurrentValue)) * MathF.Max((1f - _bgTweener.CurrentValue), 0.35f);
-                        e.rotation = (1f - _bgTweener.CurrentValue) * -3.5f;
+                        e.rotation = _logoRotation + (1f - _bgTweener.CurrentValue) * -3.5f;
 
                         // Match the background's position logic perfectly so it stays centered inside the cover
                         float activePanelValue = MathF.Max(_settingsTweener.CurrentValue, _modifiersTweener.CurrentValue);
@@ -1051,6 +1053,7 @@ namespace CoreGame
             };
             _rythmIndexer.OnBeat += (beatIndex) =>
             {
+                if (_inIntro) return;
                 if (!_isCoverView) PlaySFX(_rythmIndexer.IsDownbeat ? "dwbeat" : "beat");
                 _logoTweener.SetValue(.93f);
                 _logoTweener.Restart(1.5f, 1f, Easing.Quintic, Direction.Out);
@@ -1101,7 +1104,7 @@ namespace CoreGame
                         // Play randomly selected beatmap music preview
                         PlayMusic(_currentAudioKey);
                         if (_audioTweeners.ContainsKey(_currentAudioKey))
-                            _audioTweeners[_currentAudioKey].Restart(0.8f, _targetVolume, Easing.Exponential, Direction.Out);
+                            _audioTweeners[_currentAudioKey].Restart(2.5f, _targetVolume, Easing.Cubic, Direction.Out);
                         else
                             SetMusicVolume(_currentAudioKey, _targetVolume);
                         SeekMusic(_currentAudioKey, _beatmap.PreviewTime / 1000f);
