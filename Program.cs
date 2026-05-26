@@ -36,6 +36,7 @@ namespace CoreGame
         private float _settingsYOffset = 15f;
         private TaikoPlayfield _taikofield;
         private ImageFrame _logoUI = null!;
+        private EffectFrame _blurBgUI = null!;
 
         // Rhythm State
         private readonly OsuParser _parser = new();
@@ -63,11 +64,8 @@ namespace CoreGame
         private bool _transitionFired = false;
         private GridTransitionRadial _welcomeTransition = null!;
         private Tweener _logoRotation = AddTween(new Tweener());
-        private float _logoSpin = 0f;
 
         // Interactive Visual Suite States
-        private float _parallaxX = 0f;
-        private float _parallaxY = 0f;
         private float _bgBeatScale = 1.0f;
         private readonly List<LogoShockwave> _shockwaves = new();
         private readonly List<MenuParticle> _menuParticles = new();
@@ -219,7 +217,7 @@ namespace CoreGame
                 }
             };
 
-            EffectFrame blurBg = new EffectFrame
+            _blurBgUI = new EffectFrame
             {
                 position = new UDim2(0.5f, 0.5f),
                 size = new UDim2(1f, 1f),
@@ -245,7 +243,7 @@ namespace CoreGame
                         float baseTargetX = ArtMathHelper.Lerp(0.38f, 0.42f, activePanelValue);
                         float currentTargetX = ArtMathHelper.Lerp(baseTargetX, 0.5f, _startTransitionTweener.CurrentValue);
 
-                        e.position = UDim2.Lerp(UDim2.FromScale(0.5f, 0.5f), UDim2.FromScale(currentTargetX, 0.5f), _bgTweener.CurrentValue) + UDim2.FromOffset(-_parallaxX, -_parallaxY);
+                        e.position = UDim2.Lerp(UDim2.FromScale(0.5f, 0.5f), UDim2.FromScale(currentTargetX, 0.5f), _bgTweener.CurrentValue);
 
                         //e.position = UDim2.Lerp(UDim2.FromScale(0.5f, 0.5f), UDim2.FromScale(0.38f, 0.5f), _bgTweener.CurrentValue);
 
@@ -289,7 +287,7 @@ namespace CoreGame
                     }
                 }
             };
-            blurBg.children.Add(bg);
+            _blurBgUI.children.Add(bg);
 
             // Initialize floating lens bokeh particles (Number 5)
             Random rand = new Random();
@@ -305,7 +303,7 @@ namespace CoreGame
                     position = new UDim2((float)rand.NextDouble(), (float)rand.NextDouble())
                 };
                 
-                blurBg.children.Add(partNode);
+                _blurBgUI.children.Add(partNode);
                 _menuParticles.Add(new MenuParticle
                 {
                     VisualNode = partNode,
@@ -325,19 +323,18 @@ namespace CoreGame
                 fit = ObjectFit.Cover,
                 onUpdate = (e, dt) =>
                 {
-                    _logoSpin += dt * 0.12f; // Slowly rotate the logo continuously
                     if (_inIntro)
                     {
                         e.alpha = _introAlpha;
                         e.size = new UDim2(0.35f, 0.35f);
                         e.position = UDim2.FromScale(0.5f, 0.5f);
-                        e.rotation = _logoRotation.CurrentValue + _logoSpin;
+                        e.rotation = _logoRotation.CurrentValue;
                     }
                     else
                     {
                         // Calculate dynamic size
                         e.size = (new UDim2(0.35f, 0.35f) * MathF.Max(_logoTweener.CurrentValue, _startTransitionTweener.CurrentValue)) * MathF.Max((1f - _bgTweener.CurrentValue), 0.35f);
-                        e.rotation = (_logoRotation.CurrentValue * (1f - _bgTweener.CurrentValue)) + _logoSpin;
+                        e.rotation = (_logoRotation.CurrentValue * (1f - _bgTweener.CurrentValue));
 
                         // Match the background's position logic perfectly so it stays centered inside the cover
                         float activePanelValue = MathF.Max(_settingsTweener.CurrentValue, _modifiersTweener.CurrentValue);
@@ -345,7 +342,7 @@ namespace CoreGame
                         float currentTargetX = ArtMathHelper.Lerp(baseTargetX, 0.5f, _startTransitionTweener.CurrentValue);
 
                         e.alpha = 1f - _startShrinkTweener.CurrentValue;
-                        e.position = UDim2.Lerp(UDim2.FromScale(0.5f, 0.5f), UDim2.FromScale(currentTargetX, 0.5f), _bgTweener.CurrentValue) + UDim2.FromOffset(_parallaxX * 0.6f, _parallaxY * 0.6f);
+                        e.position = UDim2.Lerp(UDim2.FromScale(0.5f, 0.5f), UDim2.FromScale(currentTargetX, 0.5f), _bgTweener.CurrentValue);
                     }
                 }
             };
@@ -1059,7 +1056,7 @@ namespace CoreGame
             Add(timePlayed);
             Add(progressBarTrack);
 
-            Add(blurBg);
+            Add(_blurBgUI);
             Add(_welcomeTransition); // Renders over the background but behind the logo
 
             Add(_logoUI);
@@ -1102,13 +1099,13 @@ namespace CoreGame
                         var waveNode = new ImageFrame
                         {
                             texture = LoadImage("logo", "content/logo_game.png"),
-                            color = new Color(255, 255, 255, 120),
+                            color = new Color(255, 255, 255), // Full glowing white
                             anchorX = AnchorX.Center,
                             anchorY = AnchorY.Center,
                             fit = ObjectFit.Cover,
-                            alpha = 0.5f
+                            alpha = 0.7f
                         };
-                        Add(waveNode);
+                        _blurBgUI.children.Add(waveNode); // RENDER BEHIND LOGO AND INHERIT LENS BLUR!
                         _shockwaves.Add(new LogoShockwave { VisualNode = waveNode, Progress = 0f });
                     }
                 }
@@ -1177,29 +1174,6 @@ namespace CoreGame
 
             _currentCoverColor = new Color((byte)_colorR, (byte)_colorG, (byte)_colorB);
 
-            // --- Interactive Parallax Tracking & Subtle Beat Decay ---
-            if (!_isCoverView && !_inIntro)
-            {
-                ArtFrame.ArtTypes.Vector2 mousePos = Mouse.Position;
-                float deltaX = mousePos.X - 960f;
-                float deltaY = mousePos.Y - 540f;
-                
-                float normX = Math.Clamp(deltaX / 960f, -1f, 1f);
-                float normY = Math.Clamp(deltaY / 540f, -1f, 1f);
-                
-                float targetParallaxX = normX * 16f; // max 16px parallax
-                float targetParallaxY = normY * 16f;
-                
-                _parallaxX += (targetParallaxX - _parallaxX) * (dt * 5f);
-                _parallaxY += (targetParallaxY - _parallaxY) * (dt * 5f);
-            }
-            else
-            {
-                // Smoothly decay parallax to zero when in cover view or intro
-                _parallaxX += (0f - _parallaxX) * (dt * 8f);
-                _parallaxY += (0f - _parallaxY) * (dt * 8f);
-            }
-
             // Decay Background Beat Scale back to 1.0f
             _bgBeatScale += (1.0f - _bgBeatScale) * (dt * 8f);
 
@@ -1235,21 +1209,23 @@ namespace CoreGame
             for (int i = _shockwaves.Count - 1; i >= 0; i--)
             {
                 var wave = _shockwaves[i];
-                wave.Progress += dt * 2.5f; // completes in 400ms
+                wave.Progress += dt * 2.2f; // completes in ~450ms
                 if (wave.Progress >= 1f)
                 {
-                    Remove(wave.VisualNode);
+                    _blurBgUI.children.Remove(wave.VisualNode); // REMOVE FROM BLURBG
                     _shockwaves.RemoveAt(i);
                 }
                 else
                 {
-                    float scaleMultiplier = 1f + wave.Progress * 0.65f;
+                    // Scale it much larger so it extends far beyond the logo's boundaries!
+                    float scaleMultiplier = 1f + wave.Progress * 1.4f; // expands to 2.4x scale!
                     float baseSizeScale = 0.35f * MathF.Max(_logoTweener.CurrentValue, _startTransitionTweener.CurrentValue);
                     wave.VisualNode.size = new UDim2(baseSizeScale * scaleMultiplier, baseSizeScale * scaleMultiplier);
                     
-                    wave.VisualNode.position = _logoUI.position;
-                    wave.VisualNode.rotation = _logoUI.rotation;
-                    wave.VisualNode.alpha = (1f - wave.Progress) * 0.5f;
+                    // Center inside blurBg (which aligns perfectly with logo center)
+                    wave.VisualNode.position = UDim2.FromScale(0.5f, 0.5f);
+                    wave.VisualNode.rotation = _logoRotation.CurrentValue;
+                    wave.VisualNode.alpha = (1f - wave.Progress) * 0.75f;
                 }
             }
 
