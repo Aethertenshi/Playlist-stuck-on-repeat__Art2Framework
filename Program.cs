@@ -1,4 +1,4 @@
-﻿using ArtFrame;
+using ArtFrame;
 using ArtFrame.ArtTypes;
 using ArtFrame.Easings;
 using ArtFrame.RythmModule;
@@ -55,6 +55,12 @@ namespace CoreGame
         private bool _isStarting = false;
         private float _startTimer = 0f;
         private int _startPhase = 0;
+
+        // Intro Screen State
+        private bool _inIntro = true;
+        private float _introAlpha = 0f;
+        private bool _transitionFired = false;
+        private GridTransitionRadial _welcomeTransition = null!;
 
         // Phase 1: Cover centers, UI hides, BG darkens
         private Tweener _startTransitionTweener = AddTween(new Tweener());
@@ -159,14 +165,28 @@ namespace CoreGame
                 }
             };
 
-            // 1. Initial Beatmap Load
-            _beatmap = _parser.Parse("sounds/osu.osu");
+            // 1. Scan and Pick Random Beatmap
+            var scannedBeatmaps = scanner.ScanLazy(SongsPath).ToList();
+            if (scannedBeatmaps.Count > 0)
+            {
+                var rand = new Random();
+                _beatmap = scannedBeatmaps[rand.Next(scannedBeatmaps.Count)];
+            }
+            else
+            {
+                _beatmap = _parser.Parse("sounds/osu.osu");
+            }
+
             LoadMusic(_currentAudioKey, Path.Combine(Path.GetDirectoryName(_beatmap.FilePath) ?? "", _beatmap.AudioFilename));
             
             Image initialBg = LoadImage(_beatmap.BeatmapSetId.ToString(), _beatmap.GetBackgroundFullPath());
             _targetCoverColor = GetAverageColor(initialBg, 25);
             _colorR = _targetCoverColor.R; _colorG = _targetCoverColor.G; _colorB = _targetCoverColor.B; // Snap floats
             _currentCoverColor = _targetCoverColor;
+
+            // Initialize Grid Transition Radial
+            _welcomeTransition = new GridTransitionRadial(Color.Black, fadeOut: true, reverseWave: false, tileSize: 60);
+            _welcomeTransition.SetValue(0f); // Screen starts completely black/opaque
 
             // --- L1 UI Elements ---
             Frame bgDrop = new Frame
@@ -269,21 +289,27 @@ namespace CoreGame
                 fit = ObjectFit.Cover,
                 onUpdate = (e, dt) =>
                 {
-                    // Calculate dynamic size
-                    e.size = (new UDim2(0.35f, 0.35f) * MathF.Max(_logoTweener.CurrentValue, _startTransitionTweener.CurrentValue)) * MathF.Max((1f - _bgTweener.CurrentValue), 0.35f);
-                    e.rotation = (1f - _bgTweener.CurrentValue) * -3.5f;
+                    if (_inIntro)
+                    {
+                        e.alpha = _introAlpha;
+                        e.size = new UDim2(0.35f, 0.35f) * _logoTweener.CurrentValue;
+                        e.position = UDim2.FromScale(0.5f, 0.5f);
+                        e.rotation = 0f;
+                    }
+                    else
+                    {
+                        // Calculate dynamic size
+                        e.size = (new UDim2(0.35f, 0.35f) * MathF.Max(_logoTweener.CurrentValue, _startTransitionTweener.CurrentValue)) * MathF.Max((1f - _bgTweener.CurrentValue), 0.35f);
+                        e.rotation = (1f - _bgTweener.CurrentValue) * -3.5f;
 
-                    // Match the background's position logic perfectly so it stays centered inside the cover
-                    //UDim2 fullScreenPos = UDim2.FromScale(0.5f, 0.5f);
-                    //UDim2 coverPos = UDim2.FromScale(0.38f, 0.5f);
-                    //e.position = UDim2.Lerp(fullScreenPos, coverPos, _bgTweener.CurrentValue);
-                    //float currentTargetX = ArtMathHelper.Lerp(0.38f, 0.42f, _settingsTweener.CurrentValue);
-                    float activePanelValue = MathF.Max(_settingsTweener.CurrentValue, _modifiersTweener.CurrentValue);
-                    float baseTargetX = ArtMathHelper.Lerp(0.38f, 0.42f, activePanelValue);
-                    float currentTargetX = ArtMathHelper.Lerp(baseTargetX, 0.5f, _startTransitionTweener.CurrentValue);
+                        // Match the background's position logic perfectly so it stays centered inside the cover
+                        float activePanelValue = MathF.Max(_settingsTweener.CurrentValue, _modifiersTweener.CurrentValue);
+                        float baseTargetX = ArtMathHelper.Lerp(0.38f, 0.42f, activePanelValue);
+                        float currentTargetX = ArtMathHelper.Lerp(baseTargetX, 0.5f, _startTransitionTweener.CurrentValue);
 
-                    e.alpha = 1f - _startShrinkTweener.CurrentValue;
-                    e.position = UDim2.Lerp(UDim2.FromScale(0.5f, 0.5f), UDim2.FromScale(currentTargetX, 0.5f), _bgTweener.CurrentValue);
+                        e.alpha = 1f - _startShrinkTweener.CurrentValue;
+                        e.position = UDim2.Lerp(UDim2.FromScale(0.5f, 0.5f), UDim2.FromScale(currentTargetX, 0.5f), _bgTweener.CurrentValue);
+                    }
                 }
             };
 
@@ -307,7 +333,7 @@ namespace CoreGame
 
                     e.scale = originalScale * MathF.Max((1f - _bgTweener.CurrentValue), 0.35f);
                     e.position = UDim2.Lerp(fullScreenPos, coverPos, _bgTweener.CurrentValue);
-                    e.alpha = 1f - _bgTweener.CurrentValue;
+                    e.alpha = _inIntro ? 0f : (1f - _bgTweener.CurrentValue);
                 }
             };
 
@@ -996,6 +1022,8 @@ namespace CoreGame
 
             // --- Drawing Index ---
             Add(bgDrop);
+            Add(blurBg);
+            Add(_welcomeTransition); // Renders over the background but behind the logo
 
             Add(songTitle);
             Add(songArtist);
@@ -1005,7 +1033,6 @@ namespace CoreGame
             Add(timePlayed);
             Add(progressBarTrack);
 
-            Add(blurBg);
             Add(logo);
             Add(startPrompt);
 
@@ -1026,18 +1053,61 @@ namespace CoreGame
             }
 
             AddHelper(_rythmIndexer);
-            PlayMusic(_currentAudioKey);
-            SetMusicVolume(_currentAudioKey, _targetVolume);
-            SeekMusic(_currentAudioKey, _beatmap.PreviewTime / 1000f);
+
+            // Setup and Play Welcome intro audio
+            LoadMusic("welcome", "sounds/sfxs/welcome.wav");
+            PlayMusic("welcome");
+            SetMusicVolume("welcome", _targetVolume);
+
+            // Load and pause the selected beatmap preview audio
+            SetMusicVolume(_currentAudioKey, 0f);
+            StopMusic(_currentAudioKey);
 
             Tweener initialTweener = AddTween(new Tweener());
-            initialTweener.SetValue(_targetVolume);
+            initialTweener.SetValue(0f); // Starts at 0 volume
             _audioTweeners[_currentAudioKey] = initialTweener;
         }
 
         // --- Custom Game Loop for State Management ---
         public void Update(float dt)
         {
+            if (_inIntro)
+            {
+                float played = GetMusicTimePlayed("welcome");
+                float length = GetMusicLength("welcome");
+
+                if (length > 0)
+                {
+                    float progress = played / length;
+                    _introAlpha = Math.Clamp(progress * 1.25f, 0f, 1f); // Smooth logo fade-in
+
+                    // Trigger GridTransitionRadial at 95% completion of welcome.wav
+                    if (progress >= 0.95f && !_transitionFired)
+                    {
+                        _transitionFired = true;
+                        _welcomeTransition.Play(1.5f, Easing.Exponential, Direction.Out);
+                    }
+
+                    // Complete intro and play selected song
+                    if (progress >= 0.99f || (_transitionFired && !_welcomeTransition.IsPlaying))
+                    {
+                        _inIntro = false;
+                        StopMusic("welcome");
+
+                        // Play randomly selected beatmap music preview
+                        PlayMusic(_currentAudioKey);
+                        if (_audioTweeners.ContainsKey(_currentAudioKey))
+                            _audioTweeners[_currentAudioKey].Restart(0.8f, _targetVolume, Easing.Cubic, Direction.Out);
+                        else
+                            SetMusicVolume(_currentAudioKey, _targetVolume);
+                        SeekMusic(_currentAudioKey, _beatmap.PreviewTime / 1000f);
+
+                        // Trigger logo beating immediately!
+                        _logoTweener.SetValue(1.0f);
+                    }
+                }
+            }
+
             // Smoothly approach the target color using floats to prevent byte-truncation getting stuck
             _colorR += (_targetCoverColor.R - _colorR) * (dt * 5f);
             _colorG += (_targetCoverColor.G - _colorG) * (dt * 5f);
