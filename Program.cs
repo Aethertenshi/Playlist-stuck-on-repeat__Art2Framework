@@ -7,6 +7,9 @@ using ArtFrame.UIModifier;
 using ArtFrame.UserInterface;
 using OppaiSharp;
 using OsuLib;
+using ArtFrame.FileProcessing;
+using System.Text.Json;
+using System.Collections.Generic;
 
 using static ArtFrame.AudioHelper;
 using static ArtFrame.EffectsHelper;
@@ -37,6 +40,16 @@ namespace CoreGame
         private TaikoPlayfield _taikofield;
         private ImageFrame _logoUI = null!;
         private EffectFrame _blurBgUI = null!;
+        private Frame _shockwaveHolder = null!;
+        private ScrollingFrame _playlistScroll = null!;
+        private ImageFrame _bgImageFrame = null!;
+        private static readonly Dictionary<string, float> _starRatingCache = new();
+        private const string CacheFileName = "songs_star_cache.json";
+        private readonly Queue<Action> _loadQueue = new();
+        private GameSettings _settings = new();
+        private const string SettingsFileName = "settings.json";
+        private float _effectsVolume = 0.5f;
+        private float _audioOffset = -55.35f;
 
         // Rhythm State
         private readonly OsuParser _parser = new();
@@ -66,7 +79,6 @@ namespace CoreGame
         private Tweener _logoRotation = AddTween(new Tweener());
 
         // Interactive Visual Suite States
-        private float _bgBeatScale = 1.0f;
         private readonly List<LogoShockwave> _shockwaves = new();
         private readonly List<MenuParticle> _menuParticles = new();
 
@@ -97,6 +109,12 @@ namespace CoreGame
 
         public void Setup()
         {
+            // Load persistent star ratings cache
+            LoadStarRatingCache();
+
+            // Load persistent game settings
+            LoadSettings();
+
             ConfigureWindow(width: 1920, height: 1080, fullscreen: false);
             SetInputFramerate(300);
             SetFrameRate(120);
@@ -109,7 +127,6 @@ namespace CoreGame
             LoadSFX("beat", "sounds/sfxs/logo-heartbeat.wav");
             LoadSFX("dwbeat", "sounds/sfxs/logo-downbeat.wav");
             LoadSFX("hover", "sounds/sfxs/default-hover.wav");
-            LoadSFX("hover", "sounds/sfxs/default-hover.wav");
             LoadSFX("select", "sounds/sfxs/default-select.wav");
             LoadSFX("keypress1", "sounds/sfxs/key-press-1.mp3");
             LoadSFX("keypress2", "sounds/sfxs/key-press-2.mp3");
@@ -117,6 +134,12 @@ namespace CoreGame
             LoadSFX("keypress4", "sounds/sfxs/key-press-4.mp3");
             LoadSFX("keydel", "sounds/sfxs/key-delete.mp3");
             LoadSFX("play-click", "sounds/sfxs/menu-play-click.wav");
+
+            // Apply loaded SFX volumes
+            SetSFXVolume("hover", _effectsVolume);
+            SetSFXVolume("select", _effectsVolume);
+            SetSFXVolume("beat", _effectsVolume);
+            SetSFXVolume("dwbeat", _effectsVolume);
 
             LoadAtlasFont("gsans_bold", "fonts/googlesans_bold.json", "fonts/googlesans_bold.png");
             LoadAtlasFont("gsans", "fonts/googlesans.json", "fonts/googlesans.png");
@@ -196,7 +219,7 @@ namespace CoreGame
             _welcomeTransition = new GridTransitionRadial(Color.Black, fadeOut: true, reverseWave: false, tileSize: 70);
             _welcomeTransition.SetValue(0f); // Screen starts completely black/opaque
 
-            // --- L1 UI Elements ---
+            // === L1 UI Elements ===
             Frame bgDrop = new Frame
             {
                 size = new UDim2(1f, 1f),
@@ -235,8 +258,7 @@ namespace CoreGame
                         //float currentTargetSize = ArtMathHelper.Lerp(500f, 450f, _settingsTweener.CurrentValue);
 
                         // 2. Run your master layout Lerp using the dynamic target size
-                        float scaleFactor = _isCoverView ? 1f : _bgBeatScale;
-                        e.size = UDim2.Lerp(UDim2.FromScale(1f, 1f), UDim2.FromOffset(500f, 500f), _bgTweener.CurrentValue) * scaleFactor;
+                        e.size = UDim2.Lerp(UDim2.FromScale(1f, 1f), UDim2.FromOffset(500f, 500f), _bgTweener.CurrentValue);
 
                         //float currentTargetX = ArtMathHelper.Lerp(0.38f, 0.42f, _settingsTweener.CurrentValue);
                         float activePanelValue = MathF.Max(_settingsTweener.CurrentValue, _modifiersTweener.CurrentValue);
@@ -247,7 +269,7 @@ namespace CoreGame
 
                         //e.position = UDim2.Lerp(UDim2.FromScale(0.5f, 0.5f), UDim2.FromScale(0.38f, 0.5f), _bgTweener.CurrentValue);
 
-                        _blur.BlurAmount = ArtMathHelper.Lerp(0f, 4.5f, 1f - _bgTweener.CurrentValue);
+                        _blur.BlurAmount = ArtMathHelper.Lerp(0f, 2.5f, 1f - _bgTweener.CurrentValue);
                         e.alpha = 1f - _startShrinkTweener.CurrentValue;
                         e.BypassEffect = _bgTweener.CurrentValue >= 0.99f;
 
@@ -280,7 +302,7 @@ namespace CoreGame
                     e.alpha = 1f - _startShrinkTweener.CurrentValue;
 
                     // Input Polling
-                    if (Keyboard.IsKeyPressed(Keys.Space) && !_isStarting)
+                    if ((Keyboard.IsKeyPressed(Keys.Space) || (Mouse.LeftClicked() && !_isCoverView)) && !_isStarting && !_inIntro)
                     {
                         _isCoverView = !_isCoverView;
                         _bgTweener.Restart(duration: 0.7f, targetValue: _isCoverView ? 1.0f : 0f, Easing.Exponential, Direction.Out);
@@ -288,15 +310,28 @@ namespace CoreGame
                 }
             };
             _blurBgUI.children.Add(bg);
+            _bgImageFrame = bg;
+
+            _shockwaveHolder = new Frame
+            {
+                position = bg.position,
+                anchorX = bg.anchorX,
+                anchorY = bg.anchorY,
+                alpha = 0,
+                onUpdate = (frame, dt) =>
+                {
+                    frame.size = bg.size;
+                }
+            };
 
             // Initialize floating lens bokeh particles (Number 5)
             Random rand = new Random();
             for (int i = 0; i < 25; i++)
             {
                 float size = (float)rand.NextDouble() * 15f + 8f; // size between 8px and 23px
-                Frame partNode = new Frame
+                CircleFrame partNode = new CircleFrame
                 {
-                    color = new Color(255, 255, 255, (byte)rand.Next(30, 75)), // soft glowing alpha
+                    color = new Color(255, 255, 255, (byte)rand.Next(75, 100)), // soft glowing alpha
                     anchorX = AnchorX.Center,
                     anchorY = AnchorY.Center,
                     size = new UDim2(0f, 0f, size, size),
@@ -307,8 +342,8 @@ namespace CoreGame
                 _menuParticles.Add(new MenuParticle
                 {
                     VisualNode = partNode,
-                    DriftSpeedX = (float)(rand.NextDouble() * 2.0 - 1.0) * 0.35f,
-                    DriftSpeedY = (float)(rand.NextDouble() * 2.0 - 1.0) * 0.35f,
+                    DriftSpeedX = (float)(rand.NextDouble() * 2.0 - 1.0) * 0.45f,
+                    DriftSpeedY = (float)(rand.NextDouble() * 2.0 - 1.0) * 0.45f,
                     BaseSize = size,
                     PulsePhase = (float)(rand.NextDouble() * Math.PI * 2)
                 });
@@ -325,15 +360,15 @@ namespace CoreGame
                 {
                     if (_inIntro)
                     {
-                        e.alpha = _introAlpha;
-                        e.size = new UDim2(0.35f, 0.35f);
+                        e.alpha = MathF.Max(0.3f, _introAlpha);
+                        e.size = new UDim2(0.4f, 0.4f);
                         e.position = UDim2.FromScale(0.5f, 0.5f);
                         e.rotation = _logoRotation.CurrentValue;
                     }
                     else
                     {
                         // Calculate dynamic size
-                        e.size = (new UDim2(0.35f, 0.35f) * MathF.Max(_logoTweener.CurrentValue, _startTransitionTweener.CurrentValue)) * MathF.Max((1f - _bgTweener.CurrentValue), 0.35f);
+                        e.size = (new UDim2(0.4f, 0.4f) * MathF.Max(_logoTweener.CurrentValue, _startTransitionTweener.CurrentValue)) * MathF.Max((1f - _bgTweener.CurrentValue), 0.25f);
                         e.rotation = (_logoRotation.CurrentValue * (1f - _bgTweener.CurrentValue));
 
                         // Match the background's position logic perfectly so it stays centered inside the cover
@@ -347,31 +382,7 @@ namespace CoreGame
                 }
             };
 
-            ArtObject startPrompt = new TextFrame
-            {
-                text = "Press [SPACE] To Start!",
-                fontName = "gsans_bold",
-                anchorX = AnchorX.Center,
-                anchorY = AnchorY.Center,
-                textAnchorX = AnchorX.Center,
-                textAnchorY = AnchorY.Center,
-                color = Color.Black,
-                backgroundColor = Color.White,
-                backgroundPadding = 9f,
-                onUpdate = (e, dt) =>
-                {
-                    // 1f when fullscreen (0), 0f when playlist open (1)
-                    UDim2 fullScreenPos = UDim2.FromScale(0.5f, 0.7f);
-                    UDim2 coverPos = UDim2.FromScale(0.38f, 0.65f);
-                    float originalScale = 2.35f;
-
-                    e.scale = originalScale * MathF.Max((1f - _bgTweener.CurrentValue), 0.35f);
-                    e.position = UDim2.Lerp(fullScreenPos, coverPos, _bgTweener.CurrentValue);
-                    e.alpha = _inIntro ? 0f : (1f - _bgTweener.CurrentValue);
-                }
-            };
-
-            // --- L1.5 Metadata Badges ---
+            // === L1.5 Metadata Badges ===
 
             // 1. Star Rating (Top Left)
             bg.children.Add(new TextFrame
@@ -472,7 +483,7 @@ namespace CoreGame
                 }
             });
 
-            // --- L2 UI Elements ---
+            // === L2 UI Elements ===
 
             // 1. Song Title
             ArtObject songTitle = new TextFrame
@@ -667,7 +678,7 @@ namespace CoreGame
                 }
             };
 
-            // --- TopBar ---
+            // === TopBar ===
             Frame topBar = new Frame
             {
                 anchorX = AnchorX.Left,
@@ -838,7 +849,7 @@ namespace CoreGame
             });
             topBar.children.Add(modifiersBtn);
 
-            // --- Playlist Scroll --
+            // === Playlist Scroll ===
             ScrollingFrame playlistScroll = new ScrollingFrame
             {
                 anchorX = AnchorX.Right,
@@ -857,9 +868,10 @@ namespace CoreGame
                 }
             };
 
+            _playlistScroll = playlistScroll;
             _starRating = GetRealStarRating(_beatmap);
 
-            // --- Modifiers Panel ---
+            // === Modifiers Panel ===
             ScrollingFrame modifiersPanel = new ScrollingFrame
             {
                 anchorX = AnchorX.Left,
@@ -1058,9 +1070,9 @@ namespace CoreGame
 
             Add(_blurBgUI);
             Add(_welcomeTransition); // Renders over the background but behind the logo
+            Add(_shockwaveHolder);
 
             Add(_logoUI);
-            Add(startPrompt);
 
             Add(settingsPanel);
             Add(modifiersPanel);
@@ -1071,7 +1083,6 @@ namespace CoreGame
             int scannedCount = 0;
             foreach (OsuBeatmap bm in scanner.ScanLazy(SongsPath))
             {
-                LoadImage(bm.BeatmapSetId.ToString(), bm.GetBackgroundFullPath());
                 var button = CreateSongRow(bm, scannedCount, currentYOffset, bg);
                 playlistScroll.children.Add(button);
                 currentYOffset += 90f;
@@ -1082,7 +1093,7 @@ namespace CoreGame
             _rythmIndexer = new RhythmIndexer(_audioClock, _rhythmTracker, () => GetMusicTimePlayed(_currentAudioKey))
             {
                 Beatmap = _beatmap,
-                MusicOffset = -55.35f
+                MusicOffset = _audioOffset
             };
             _rythmIndexer.OnBeat += (beatIndex) =>
             {
@@ -1091,27 +1102,29 @@ namespace CoreGame
                 if (!_isCoverView)
                 {
                     PlaySFX(_rythmIndexer.IsDownbeat ? "dwbeat" : "beat");
-                    _bgBeatScale = _rythmIndexer.IsDownbeat ? 1.015f : 1.008f; // epilepsy friendly subtle zoom!
                     
                     // Spawn a logo shockwave on downbeats (Number 4)
                     if (_rythmIndexer.IsDownbeat)
                     {
                         var waveNode = new ImageFrame
                         {
-                            texture = LoadImage("logo", "content/logo_game.png"),
+                            texture = LoadImage("logo"),
                             color = new Color(255, 255, 255), // Full glowing white
                             anchorX = AnchorX.Center,
                             anchorY = AnchorY.Center,
                             fit = ObjectFit.Cover,
                             alpha = 0.7f
                         };
-                        _blurBgUI.children.Add(waveNode); // RENDER BEHIND LOGO AND INHERIT LENS BLUR!
+                        _shockwaveHolder.children.Add(waveNode); // RENDER BEHIND LOGO AND INHERIT LENS BLUR!
                         _shockwaves.Add(new LogoShockwave { VisualNode = waveNode, Progress = 0f });
                     }
                 }
                 
-                _logoTweener.SetValue(.93f);
-                _logoTweener.Restart(1.5f, 1f, Easing.Quintic, Direction.Out);
+                if (_rythmIndexer.IsDownbeat)
+                    _logoTweener.SetValue(.92f);
+                else
+                    _logoTweener.SetValue(.97f);
+                _logoTweener.Restart(1.8f, 1f, Easing.Fluid, Direction.Out);
             };
 
             AddHelper(_rythmIndexer);
@@ -1128,11 +1141,24 @@ namespace CoreGame
             Tweener initialTweener = AddTween(new Tweener());
             initialTweener.SetValue(0f); // Starts at 0 volume
             _audioTweeners[_currentAudioKey] = initialTweener;
+
+            // Initialize OS Drag-and-Drop Handler
+            OszDropHandler.Initialize();
         }
 
         // --- Custom Game Loop for State Management ---
         public void Update(float dt)
         {
+            // Drain the OS drag-and-drop file queue
+            OszDropHandler.DrainQueue(ProcessDroppedFile);
+
+            // Process at most one lazy load task per frame to prevent main-thread stuttering
+            if (_loadQueue.Count > 0)
+            {
+                var loadAction = _loadQueue.Dequeue();
+                try { loadAction(); } catch { }
+            }
+
             if (_inIntro)
             {
                 float played = GetMusicTimePlayed("welcome");
@@ -1148,7 +1174,7 @@ namespace CoreGame
                     {
                         _transitionFired = true;
                         _welcomeTransition.Play(1.5f, Easing.Cubic, Direction.Out);
-                        _logoRotation.Start(2f, 0f, -3.7f, Easing.Cubic, Direction.Out);
+                        _logoRotation.Start(2f, 0f, -3.7f, Easing.Exponential, Direction.Out);
 
                         // Play randomly selected beatmap music preview
                         PlayMusic(_currentAudioKey);
@@ -1172,19 +1198,17 @@ namespace CoreGame
             _colorG += (_targetCoverColor.G - _colorG) * (dt * 5f);
             _colorB += (_targetCoverColor.B - _colorB) * (dt * 5f);
 
-            _currentCoverColor = new Color((byte)_colorR, (byte)_colorG, (byte)_colorB);
+            _currentCoverColor = new Color((byte)Math.Clamp(_colorR, 0, 255), (byte)Math.Clamp(_colorG, 0, 255), (byte)Math.Clamp(_colorB, 0, 255));
 
             // Decay Background Beat Scale back to 1.0f
-            _bgBeatScale += (1.0f - _bgBeatScale) * (dt * 8f);
 
             // Update Bokeh Particles (Number 5)
             float particleSpeedMultiplier = _isCoverView ? 0f : (1f - _startTransitionTweener.CurrentValue);
-            float beatFlash = (_bgBeatScale - 1.0f) * 10f; // subtle flash expansion
             
             foreach (var part in _menuParticles)
             {
-                float xOffset = part.DriftSpeedX * dt * 35f * particleSpeedMultiplier;
-                float yOffset = part.DriftSpeedY * dt * 35f * particleSpeedMultiplier;
+                float xOffset = part.DriftSpeedX * dt * 45f * particleSpeedMultiplier;
+                float yOffset = part.DriftSpeedY * dt * 45f * particleSpeedMultiplier;
                 
                 float newScaleX = part.VisualNode.position.ScaleX + (xOffset / 1920f);
                 float newScaleY = part.VisualNode.position.ScaleY + (yOffset / 1080f);
@@ -1197,7 +1221,7 @@ namespace CoreGame
                 part.VisualNode.position = UDim2.FromScale(newScaleX, newScaleY);
                 part.PulsePhase += dt * 2.0f;
                 
-                float dynamicSize = part.BaseSize * (1.0f + MathF.Sin(part.PulsePhase) * 0.12f + beatFlash);
+                float dynamicSize = part.BaseSize * (1.0f + MathF.Sin(part.PulsePhase) * 0.12f);
                 part.VisualNode.size = new UDim2(0f, 0f, dynamicSize, dynamicSize);
                 
                 float introFactor = _inIntro ? _introAlpha : 1f;
@@ -1209,23 +1233,23 @@ namespace CoreGame
             for (int i = _shockwaves.Count - 1; i >= 0; i--)
             {
                 var wave = _shockwaves[i];
-                wave.Progress += dt * 2.2f; // completes in ~450ms
+                wave.Progress += dt * 2.0f; // completes in ~500ms
                 if (wave.Progress >= 1f)
                 {
-                    _blurBgUI.children.Remove(wave.VisualNode); // REMOVE FROM BLURBG
+                    _shockwaveHolder.children.Remove(wave.VisualNode); // REMOVE FROM BLURBG
                     _shockwaves.RemoveAt(i);
                 }
                 else
                 {
                     // Scale it much larger so it extends far beyond the logo's boundaries!
-                    float scaleMultiplier = 1f + wave.Progress * 1.4f; // expands to 2.4x scale!
-                    float baseSizeScale = 0.35f * MathF.Max(_logoTweener.CurrentValue, _startTransitionTweener.CurrentValue);
+                    float scaleMultiplier = 1f + wave.Progress * 0.125f; // expands to 1.125x scale!
+                    float baseSizeScale = 0.4f * MathF.Max(_logoTweener.CurrentValue, _startTransitionTweener.CurrentValue);
                     wave.VisualNode.size = new UDim2(baseSizeScale * scaleMultiplier, baseSizeScale * scaleMultiplier);
                     
                     // Center inside blurBg (which aligns perfectly with logo center)
                     wave.VisualNode.position = UDim2.FromScale(0.5f, 0.5f);
                     wave.VisualNode.rotation = _logoRotation.CurrentValue;
-                    wave.VisualNode.alpha = (1f - wave.Progress) * 0.75f;
+                    wave.VisualNode.alpha = (1f - wave.Progress) * 0.45f;
                 }
             }
 
@@ -1350,6 +1374,7 @@ namespace CoreGame
                     handleWidth = 15f,
                     anchorX = AnchorX.Center,
                     anchorY = AnchorY.Top,
+                    currentValue = _targetVolume,
                     onUpdate = (e, dt) =>
                     {
                         byte r = (byte)(_currentCoverColor.R * 0.85f);
@@ -1364,6 +1389,7 @@ namespace CoreGame
                     {
                         _targetVolume = e.currentValue;
                         _audioTweeners[_currentAudioKey].Restart(0.5f, _targetVolume, Easing.Cubic, Direction.Out);
+                        SaveSettings();
                     }
                 };
                 settingsPanel.children.Add(sliderMainVolume);
@@ -1384,6 +1410,7 @@ namespace CoreGame
                     handleWidth = 15f,
                     anchorX = AnchorX.Center,
                     anchorY = AnchorY.Top,
+                    currentValue = _effectsVolume,
                     onUpdate = (e, dt) =>
                     {
                         byte r = (byte)(_currentCoverColor.R * 0.85f);
@@ -1396,10 +1423,12 @@ namespace CoreGame
                     },
                     onValueChanges = (e) =>
                     {
+                        _effectsVolume = e.currentValue;
                         SetSFXVolume("hover", e.currentValue);
                         SetSFXVolume("select", e.currentValue);
                         SetSFXVolume("beat", e.currentValue);
                         SetSFXVolume("dwbeat", e.currentValue);
+                        SaveSettings();
                     }
                 };
                 settingsPanel.children.Add(sliderEffectVolume);
@@ -1426,7 +1455,7 @@ namespace CoreGame
                     minValue = -80f,
                     maxValue = 80f,
                     defaultValue = 0,
-                    currentValue = -55.36f,
+                    currentValue = _audioOffset,
                     onUpdate = (e, dt) =>
                     {
                         byte r = (byte)(_currentCoverColor.R * 0.85f);
@@ -1439,7 +1468,12 @@ namespace CoreGame
                     },
                     onValueChanges = (e) =>
                     {
-                        _rythmIndexer?.MusicOffset = e.currentValue;
+                        _audioOffset = e.currentValue;
+                        if (_rythmIndexer != null)
+                        {
+                            _rythmIndexer.MusicOffset = e.currentValue;
+                        }
+                        SaveSettings();
                     }
                 };
                 settingsPanel.children.Add(sliderAudioOffset);
@@ -1494,6 +1528,67 @@ namespace CoreGame
             });
 
             return toggleBtn;
+        }
+
+        private void ProcessDroppedFile(string path)
+        {
+            Console.WriteLine($"[MainGame] Dropped file detected: {path}");
+            if (string.IsNullOrEmpty(path)) return;
+
+            OsuBeatmap? newBeatmap = null;
+
+            try
+            {
+                // 1. If it's a .osz file
+                if (path.EndsWith(".osz", StringComparison.OrdinalIgnoreCase))
+                {
+                    string? extractedFolder = OszImporter.Import(path, SongsPath);
+                    if (extractedFolder != null && Directory.Exists(extractedFolder))
+                    {
+                        var osuFiles = Directory.GetFiles(extractedFolder, "*.osu", SearchOption.AllDirectories);
+                        if (osuFiles.Length > 0)
+                        {
+                            newBeatmap = _parser.Parse(osuFiles[0]);
+                        }
+                        else
+                        {
+                            Console.WriteLine($"[MainGame] No .osu files found in extracted .osz folder: {extractedFolder}");
+                        }
+                    }
+                }
+                // 2. If it's a .osu file directly
+                else if (path.EndsWith(".osu", StringComparison.OrdinalIgnoreCase))
+                {
+                    newBeatmap = _parser.Parse(path);
+                }
+                else
+                {
+                    Console.WriteLine($"[MainGame] Unsupported dropped file type: {path}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[MainGame] Error processing dropped file: {ex.Message}");
+            }
+
+            if (newBeatmap != null)
+            {
+                Console.WriteLine($"[MainGame] Successfully processed dropped beatmap: {newBeatmap.Title}");
+
+                // Load background image texture
+                string bgPath = newBeatmap.GetBackgroundFullPath();
+                LoadImage(newBeatmap.BeatmapSetId.ToString(), bgPath);
+
+                // Add song button to scrolling playlist UI
+                float yOffset = 10f + _playlistScroll.children.Count * 90f;
+                var button = CreateSongRow(newBeatmap, _playlistScroll.children.Count, yOffset, _bgImageFrame);
+                _playlistScroll.children.Add(button);
+
+                // Instantly select, load, play the new song and update star rating!
+                ChangeSong(newBeatmap, _bgImageFrame);
+                _starRating = GetRealStarRating(newBeatmap);
+                PlaySFX("select");
+            }
         }
 
         private void ChangeSong(OsuBeatmap targetMap, ImageFrame? bg = null)
@@ -1579,7 +1674,32 @@ namespace CoreGame
                 btn.pressedColor = new Color(r, g, b, 255);
             };
 
-            rowButton.children.Add(new ImageFrame { texture = LoadImage(bm.BeatmapSetId.ToString(), bm.GetBackgroundFullPath()), position = new UDim2(0f, 0.5f, 10f, 0f), size = new UDim2(0f, 0f, 60f, 60f), anchorX = AnchorX.Left, anchorY = AnchorY.Center, fit = ObjectFit.Cover });
+            var thumbFrame = new ImageFrame
+            {
+                texture = LoadImage("logo"),
+                position = new UDim2(0f, 0.5f, 10f, 0f),
+                size = new UDim2(0f, 0f, 60f, 60f),
+                anchorX = AnchorX.Left,
+                anchorY = AnchorY.Center,
+                fit = ObjectFit.Cover
+            };
+            rowButton.children.Add(thumbFrame);
+
+            // Queue background texture loading lazily to prevent synchronous boot freeze
+            string id = bm.BeatmapSetId.ToString();
+            string bgPath = bm.GetBackgroundFullPath();
+            _loadQueue.Enqueue(() =>
+            {
+                try
+                {
+                    Image loadedTexture = LoadImage(id, bgPath);
+                    thumbFrame.texture = loadedTexture;
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[MainGame] Error lazy loading background for {id}: {ex.Message}");
+                }
+            });
             
             rowButton.children.Add(new TextFrame { text = bm.Title, fontName = "gsans_bold", position = new UDim2(0f, 0f, 85f, 18f), anchorX = AnchorX.Left, anchorY = AnchorY.Top, textAnchorX = AnchorX.Left, textAnchorY = AnchorY.Top, scale = 1.3f, color = Color.White });
             
@@ -1590,23 +1710,120 @@ namespace CoreGame
             return rowButton;
         }
 
+        private void LoadStarRatingCache()
+        {
+            try
+            {
+                if (File.Exists(CacheFileName))
+                {
+                    string json = File.ReadAllText(CacheFileName);
+                    var deserialized = JsonSerializer.Deserialize<Dictionary<string, float>>(json);
+                    if (deserialized != null)
+                    {
+                        foreach (var kvp in deserialized)
+                        {
+                            _starRatingCache[kvp.Key] = kvp.Value;
+                        }
+                        Console.WriteLine($"[MainGame] Star rating cache loaded successfully. Found {_starRatingCache.Count} entries.");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[MainGame] Error loading star rating cache: {ex.Message}");
+            }
+        }
+
+        private void SaveStarRatingCache()
+        {
+            try
+            {
+                var options = new JsonSerializerOptions { WriteIndented = true };
+                string json = JsonSerializer.Serialize(_starRatingCache, options);
+                File.WriteAllText(CacheFileName, json);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[MainGame] Error saving star rating cache: {ex.Message}");
+            }
+        }
+
+        private void LoadSettings()
+        {
+            try
+            {
+                if (File.Exists(SettingsFileName))
+                {
+                    string json = File.ReadAllText(SettingsFileName);
+                    var deserialized = JsonSerializer.Deserialize<GameSettings>(json);
+                    if (deserialized != null)
+                    {
+                        _settings = deserialized;
+                        _targetVolume = _settings.MainVolume;
+                        _effectsVolume = _settings.EffectsVolume;
+                        _audioOffset = _settings.AudioOffset;
+                        Console.WriteLine($"[MainGame] Settings loaded successfully. Main={_targetVolume}, SFX={_effectsVolume}, Offset={_audioOffset}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[MainGame] Error loading settings: {ex.Message}");
+            }
+        }
+
+        private void SaveSettings()
+        {
+            try
+            {
+                _settings.MainVolume = _targetVolume;
+                _settings.EffectsVolume = _effectsVolume;
+                _settings.AudioOffset = _audioOffset;
+
+                var options = new JsonSerializerOptions { WriteIndented = true };
+                string json = JsonSerializer.Serialize(_settings, options);
+                File.WriteAllText(SettingsFileName, json);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[MainGame] Error saving settings: {ex.Message}");
+            }
+        }
+
         private float GetRealStarRating(OsuBeatmap bm)
         {
             // Safety check
             if (string.IsNullOrEmpty(bm.FilePath) || !File.Exists(bm.FilePath))
                 return 0f;
 
-            // 1. Open a StreamReader directly to your local .osu file
-            using (var reader = new StreamReader(bm.FilePath))
+            // Check cache first
+            if (_starRatingCache.TryGetValue(bm.FilePath, out float cachedRating))
+                return cachedRating;
+
+            try
             {
-                // 2. Let OppaiSharp parse the file for physics calculations
-                var oppaiBeatmap = OppaiSharp.Beatmap.Read(reader);
+                // 1. Open a StreamReader directly to your local .osu file
+                using (var reader = new StreamReader(bm.FilePath))
+                {
+                    // 2. Let OppaiSharp parse the file for physics calculations
+                    var oppaiBeatmap = OppaiSharp.Beatmap.Read(reader);
 
-                // 3. Calculate the difficulty (using NoMod for the base Star Rating)
-                var diff = new DiffCalc().Calc(oppaiBeatmap, Mods.NoMod);
+                    // 3. Calculate the difficulty (using NoMod for the base Star Rating)
+                    var diff = new DiffCalc().Calc(oppaiBeatmap, Mods.NoMod);
 
-                // Return the total star rating
-                return (float)diff.Total;
+                    float rating = (float)diff.Total;
+
+                    // Cache and save
+                    _starRatingCache[bm.FilePath] = rating;
+                    SaveStarRatingCache();
+
+                    return rating;
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[MainGame] Error calculating star rating for {bm.Title}: {ex.Message}");
+                return 0f;
             }
         }
 
@@ -1629,11 +1846,18 @@ namespace CoreGame
 
         private class MenuParticle
         {
-            public Frame VisualNode { get; set; } = null!;
+            public CircleFrame VisualNode { get; set; } = null!;
             public float DriftSpeedX { get; set; }
             public float DriftSpeedY { get; set; }
             public float BaseSize { get; set; }
             public float PulsePhase { get; set; }
+        }
+
+        private class GameSettings
+        {
+            public float MainVolume { get; set; } = 0.5f;
+            public float EffectsVolume { get; set; } = 0.5f;
+            public float AudioOffset { get; set; } = -55.35f;
         }
     }
 }
