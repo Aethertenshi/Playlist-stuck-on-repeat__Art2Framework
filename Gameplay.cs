@@ -15,6 +15,7 @@ namespace CoreGame
     {
         // --- Configuration ---
         public Keys[] HitKeys { get; set; } = { Keys.W, Keys.Q };
+        public Keys ExitKey { get; set; } = Keys.RightShift;
         public float ScrollSpeed { get; set; } = 0.5f;
         public float GlobalScale { get; set; } = 1.0f; // Changes runtime UI sizing
 
@@ -340,7 +341,7 @@ namespace CoreGame
             }
 
             // 3. Handle Esc to Menu
-            if (Keyboard.IsKeyPressed(Keys.RightShift)) //[cite: 10]
+            if (Keyboard.IsKeyPressed(ExitKey))
             {
                 OnExit?.Invoke();
                 return;
