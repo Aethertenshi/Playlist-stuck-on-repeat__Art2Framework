@@ -12,5 +12,6 @@ namespace CoreGame
         public string KeyExitGameplay { get; set; } = "RightShift";
         public string KeyHitLeft { get; set; } = "W";
         public string KeyHitRight { get; set; } = "Q";
+        public string KeyToggleListenScore { get; set; } = "LeftShift";
     }
 }

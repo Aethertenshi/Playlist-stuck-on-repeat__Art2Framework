@@ -54,6 +54,7 @@ namespace CoreGame
         private Keys _keyStartGame = Keys.Tab;
         private Keys _keyExitGameplay = Keys.RightShift;
         private Keys _keyHitLeft = Keys.W;
+        private Keys _keyToggleListenScore = Keys.LeftShift;
         private Keys _keyHitRight = Keys.Q;
         private bool _isListeningForKey = false;
         private string _listeningActionName = "";
@@ -82,6 +83,8 @@ namespace CoreGame
         private bool _isSettingsOpen = false;
         private bool _isCoverView = false;
         private bool _isStarting = false;
+        private Frame _scoreboardPanel = null!;
+        private bool _isListenScoreMode = false;
         private float _startTimer = 0f;
         private int _startPhase = 0;
 
@@ -92,6 +95,7 @@ namespace CoreGame
         private Tweener _settingsTweener = AddTween(new Tweener());
         private Tweener _startTransitionTweener = AddTween(new Tweener());
         private Tweener _startShrinkTweener = AddTween(new Tweener());
+        private Tweener _listenScoreTweener = AddTween(new Tweener());
 
         // ─── Intro Screen Welcome Lifecycle ──────────────────────────────────
         private bool _inIntro = true;

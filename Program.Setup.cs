@@ -44,12 +44,12 @@ namespace CoreGame
             SetInputFramerate(300);
             SetFrameRate(120);
 
-            LoadSFX("normal", "sounds/hitsounds/normal-hitnormal.wav");
-            LoadSFX("whistle", "sounds/hitsounds/normal-hitwhistle.wav");
-            LoadSFX("finish", "sounds/hitsounds/normal-hitfinish.wav");
-            LoadSFX("clap", "sounds/hitsounds/normal-hitclap.wav");
+            LoadSFX("normal", "sounds/hitsounds/taiko-soft-hitnormal.wav");
+            LoadSFX("whistle", "sounds/hitsounds/taiko-soft-hitwhistle.wav");
+            LoadSFX("finish", "sounds/hitsounds/taiko-soft-hitfinish.wav");
+            LoadSFX("clap", "sounds/hitsounds/taiko-soft-hitclap.wav");
 
-            LoadSFX("beat", "sounds/sfxs/logo-heartbeat.wav");
+            LoadSFX("beat", "sounds/sfxs/heartbeat.mp3");
             LoadSFX("dwbeat", "sounds/sfxs/logo-downbeat.wav");
             LoadSFX("hover", "sounds/sfxs/default-hover.wav");
             LoadSFX("select", "sounds/sfxs/default-select.wav");
@@ -93,6 +93,30 @@ namespace CoreGame
 
             _taikofield.OnExit = () =>
             {
+                // Save player's score to ScoreManager if they actually played
+                if (_taikofield.Score > 0 || _taikofield.HitsPerfect > 0 || _taikofield.HitsGood > 0 || _taikofield.HitsOk > 0 || _taikofield.HitsMiss > 0)
+                {
+                    string activeMods = "";
+                    if (_modHidden) activeMods += "HD ";
+                    if (Math.Abs(_speedMultiplier - 1f) > 0.01f)
+                    {
+                        activeMods += _speedMultiplier > 1f ? "DT " : "HT ";
+                    }
+                    if (_adjustPitch) activeMods += "NC ";
+                    activeMods = string.IsNullOrWhiteSpace(activeMods) ? "NM" : activeMods.TrimEnd();
+
+                    ScoreManager.AddScore(
+                        _beatmap?.FilePath ?? "", 
+                        "You", 
+                        _taikofield.Score, 
+                        _taikofield.GetAccuracy(), 
+                        _taikofield.MaxComboReached, 
+                        activeMods
+                    );
+                    
+                    RefreshScoreboard();
+                }
+
                 // 1. Wipe the playfield clean and hide it
                 _taikofield.ResetState();
 
@@ -109,7 +133,7 @@ namespace CoreGame
                 SetFrameRate(120);
 
                 //_rythmIndexer = new RhythmIndexer(new InterpolatingAudioClock(), new RhythmTracker(), () => GetMusicTimePlayed(_currentAudioKey)) { Beatmap = _beatmap, MusicOffset = -55.35f };
-                _startShrinkTweener.Restart(1.5f, 0f, Easing.Exponential, Direction.Out);
+                _startShrinkTweener.Restart(1f, 0f, Easing.Exponential, Direction.Out);
                 _startTransitionTweener.Restart(1.5f, 0f, Easing.Exponential, Direction.Out);
             };
 
@@ -197,30 +221,25 @@ namespace CoreGame
                 {
                     if (_blur != null)
                     {
-                        //_blur.BlurAmount = 2.5f * (1f - _bgTweener.CurrentValue);
-
-                        // 1. Dynamically calculate what the "shrunk" target size should be.
-                        // If settings is closed (0), the target is 500f. If settings is open (1), it smoothly shrinks to 450f.
-                        //float currentTargetSize = ArtMathHelper.Lerp(500f, 450f, _settingsTweener.CurrentValue);
-
-                        // 2. Run your master layout Lerp using the dynamic target size
-                        e.size = UDim2.Lerp(UDim2.FromScale(1f, 1f), UDim2.FromOffset(500f, 500f), _bgTweener.CurrentValue);
-
-                        //float currentTargetX = ArtMathHelper.Lerp(0.38f, 0.42f, _settingsTweener.CurrentValue);
                         float activePanelValue = MathF.Max(_settingsTweener.CurrentValue, _modifiersTweener.CurrentValue);
-                        float baseTargetX = ArtMathHelper.Lerp(0.38f, 0.42f, activePanelValue);
+                        float effectiveListenScore = _listenScoreTweener.CurrentValue * (1f - activePanelValue);
+
+                        // 1. Sizing: Shrunk cover in Listen/Score mode
+                        float coverSize = ArtMathHelper.Lerp(500f, 360f, effectiveListenScore);
+                        e.size = UDim2.Lerp(UDim2.FromScale(1f, 1f), UDim2.FromOffset(coverSize, coverSize), _bgTweener.CurrentValue);
+
+                        // 2. Position: Shift cover to top-left in Listen/Score mode
+                        float baseTargetX = ArtMathHelper.Lerp(0.38f, 0.42f, activePanelValue); // Cleaned nested lerp
                         float currentTargetX = ArtMathHelper.Lerp(baseTargetX, 0.5f, _startTransitionTweener.CurrentValue);
 
-                        e.position = UDim2.Lerp(UDim2.FromScale(0.5f, 0.5f), UDim2.FromScale(currentTargetX, 0.5f), _bgTweener.CurrentValue);
+                        float targetX = ArtMathHelper.Lerp(currentTargetX, currentTargetX - 0.08f, effectiveListenScore);
+                        float targetY = ArtMathHelper.Lerp(0.5f, 0.32f, effectiveListenScore);
 
-                        //e.position = UDim2.Lerp(UDim2.FromScale(0.5f, 0.5f), UDim2.FromScale(0.38f, 0.5f), _bgTweener.CurrentValue);
+                        e.position = UDim2.Lerp(UDim2.FromScale(0.5f, 0.5f), UDim2.FromScale(targetX, targetY), _bgTweener.CurrentValue);
 
                         _blur.BlurAmount = ArtMathHelper.Lerp(0f, 2.5f, 1f - _bgTweener.CurrentValue);
                         e.alpha = 1f - _startShrinkTweener.CurrentValue;
                         e.BypassEffect = _bgTweener.CurrentValue >= 0.99f;
-
-                        // Note: For blurBg, apply this shrink to the size:
-                        // e.size = UDim2.Lerp(UDim2.FromScale(1f, 1f), UDim2.FromOffset(500f, 500f), _bgTweener.CurrentValue) * (1f - _startShrinkTweener.CurrentValue);
                     }
                 }
             };
@@ -313,17 +332,26 @@ namespace CoreGame
                     }
                     else
                     {
-                        // Calculate dynamic size
-                        e.size = (new UDim2(0.4f, 0.4f) * MathF.Max(_logoTweener.CurrentValue, _startTransitionTweener.CurrentValue)) * MathF.Max((1f - _bgTweener.CurrentValue), 0.25f);
+                        float activePanelValue = MathF.Max(_settingsTweener.CurrentValue, _modifiersTweener.CurrentValue);
+                        float effectiveListenScore = _listenScoreTweener.CurrentValue * (1f - activePanelValue);
+
+                        // Calculate dynamic size matching the cover shrink factor (shrinks to 72% in Listen/Score view)
+                        float logoScaleFactor = ArtMathHelper.Lerp(0.25f, 0.25f * 0.72f, effectiveListenScore);
+                        e.size = (new UDim2(0.4f, 0.4f) * MathF.Max(_logoTweener.CurrentValue, _startTransitionTweener.CurrentValue)) * MathF.Max((1f - _bgTweener.CurrentValue), logoScaleFactor);
                         e.rotation = (_logoRotation.CurrentValue * (1f - _bgTweener.CurrentValue));
 
-                        // Match the background's position logic perfectly so it stays centered inside the cover
-                        float activePanelValue = MathF.Max(_settingsTweener.CurrentValue, _modifiersTweener.CurrentValue);
+                        // FIXED: Cleaned up the nested layout calculation to perfectly align with the title logic
                         float baseTargetX = ArtMathHelper.Lerp(0.38f, 0.42f, activePanelValue);
                         float currentTargetX = ArtMathHelper.Lerp(baseTargetX, 0.5f, _startTransitionTweener.CurrentValue);
 
+                        // Dynamic targets for Listen/Score mode
+                        float targetX = ArtMathHelper.Lerp(currentTargetX, currentTargetX - 0.08f, effectiveListenScore);
+                        float targetY = ArtMathHelper.Lerp(0.5f, 0.32f, effectiveListenScore);
+
                         e.alpha = 1f - _startShrinkTweener.CurrentValue;
-                        e.position = UDim2.Lerp(UDim2.FromScale(0.5f, 0.5f), UDim2.FromScale(currentTargetX, 0.5f), _bgTweener.CurrentValue);
+
+                        // The position retains its exact original behavior but tracks on the corrected curve
+                        e.position = UDim2.Lerp(UDim2.FromScale(0.5f, 0.5f), UDim2.FromScale(targetX, targetY), _bgTweener.CurrentValue);
                     }
                 }
             };
@@ -445,19 +473,38 @@ namespace CoreGame
                     e.text = _beatmap?.Title ?? "";
                     e.color = new Color((byte)(_currentCoverColor.R * MathF.Max(0.3f, _startTransitionTweener.CurrentValue)), (byte)(_currentCoverColor.G * MathF.Max(0.3f, _startTransitionTweener.CurrentValue)), (byte)(_currentCoverColor.B * MathF.Max(0.3f, _startTransitionTweener.CurrentValue)));
 
-                    // Drop the opacity slightly when settings is open to declutter center space
-                    e.alpha = _bgTweener.CurrentValue * (1f - _settingsTweener.CurrentValue * 0.4f);
-
-                    // Calculate dynamic X layout coordinate
-                    //float currentTargetX = ArtMathHelper.Lerp(0.38f, 0.42f, _settingsTweener.CurrentValue);
+                    // 1. REPLICATE THE EXACT COVER POSITION LOGIC
                     float activePanelValue = MathF.Max(_settingsTweener.CurrentValue, _modifiersTweener.CurrentValue);
+                    float effectiveListenScore = _listenScoreTweener.CurrentValue * (1f - activePanelValue);
+
                     float baseTargetX = ArtMathHelper.Lerp(0.38f, 0.42f, activePanelValue);
                     float currentTargetX = ArtMathHelper.Lerp(baseTargetX, 0.5f, _startTransitionTweener.CurrentValue);
 
-                    // Swap out the static 0.38f in the second UDim2 container for currentTargetX
-                    e.position = UDim2.Lerp(new UDim2(0.38f, 0.5f, -250f, 320f), new UDim2(currentTargetX, 0.5f, -250f, 280f), _bgTweener.CurrentValue);
+                    float coverTargetX = ArtMathHelper.Lerp(currentTargetX, currentTargetX - 0.08f, effectiveListenScore);
+                    float coverTargetY = ArtMathHelper.Lerp(0.5f, 0.32f, effectiveListenScore); // Reverted back to match true cover logic targets
 
-                    // Fade out normally if panels are open, but also fade out aggressively in Phase 2
+                    // This matches the Cover's exact spatial center point at any given frame
+                    UDim2 currentCoverCenter = UDim2.Lerp(UDim2.FromScale(0.5f, 0.5f), UDim2.FromScale(coverTargetX, coverTargetY), _bgTweener.CurrentValue);
+
+                    // 2. POSITION THE TITLE RELATIVE TO THAT CENTER
+                    // FIXED: When effectiveListenScore is 0 (Cover View), this math now evaluates 
+                    // EXACTLY to: ScaleX = currentTargetX, ScaleY = 0.5f, OffsetX = -250f, OffsetY = 320f.
+                    // It will stay perfectly locked to your original static positioning.
+                    float targetScaleX = ArtMathHelper.Lerp(currentTargetX, coverTargetX, _bgTweener.CurrentValue);
+                    float targetScaleY = ArtMathHelper.Lerp(0.5f, coverTargetY, _bgTweener.CurrentValue);
+
+                    float xOffset = ArtMathHelper.Lerp(-250f, 210f, effectiveListenScore);
+                    float yOffset = ArtMathHelper.Lerp(320f, -60f, effectiveListenScore);
+
+                    // We dynamically blend the scale baseline based on effectiveListenScore so it remains unmoving in Cover View
+                    e.position = new UDim2(
+                        ArtMathHelper.Lerp(currentTargetX, targetScaleX, effectiveListenScore),
+                        ArtMathHelper.Lerp(0.47f, targetScaleY, effectiveListenScore),
+                        xOffset,
+                        yOffset
+                    );
+
+                    // 3. ALPHA SINK
                     e.alpha = _bgTweener.CurrentValue
                             * (1f - _settingsTweener.CurrentValue * 0.4f)
                             * (1f - _startShrinkTweener.CurrentValue);
@@ -478,19 +525,19 @@ namespace CoreGame
                     e.text = _beatmap?.Artist ?? "";
                     e.color = new Color((byte)(_currentCoverColor.R * MathF.Max(0.6f, _startTransitionTweener.CurrentValue)), (byte)(_currentCoverColor.G * MathF.Max(0.6f, _startTransitionTweener.CurrentValue)), (byte)(_currentCoverColor.B * MathF.Max(0.6f, _startTransitionTweener.CurrentValue)));
 
-                    // Match layout opacity behaviors
-                    e.alpha = _bgTweener.CurrentValue * (1f - _settingsTweener.CurrentValue * 0.4f);
-
-                    // Calculate dynamic X layout coordinate
-                    //float currentTargetX = ArtMathHelper.Lerp(0.38f, 0.42f, _settingsTweener.CurrentValue);
                     float activePanelValue = MathF.Max(_settingsTweener.CurrentValue, _modifiersTweener.CurrentValue);
                     float baseTargetX = ArtMathHelper.Lerp(0.38f, 0.42f, activePanelValue);
                     float currentTargetX = ArtMathHelper.Lerp(baseTargetX, 0.5f, _startTransitionTweener.CurrentValue);
 
-                    // Swap out the static 0.38f in the second UDim2 container for currentTargetX
-                    e.position = UDim2.Lerp(new UDim2(0.38f, 0.5f, -250f, 350f), new UDim2(currentTargetX, 0.5f, -250f, 325f), _bgTweener.CurrentValue);
+                    float effectiveListenScore = _listenScoreTweener.CurrentValue * (1f - activePanelValue);
+                    float targetScaleX = currentTargetX - 0.08f;
+                    float targetScaleY = 0.32f;
 
-                    // Fade out normally if panels are open, but also fade out aggressively in Phase 2
+                    UDim2 originalPos = UDim2.Lerp(new UDim2(0.38f, 0.5f, -250f, 350f), new UDim2(currentTargetX, 0.5f, -250f, 325f), _bgTweener.CurrentValue);
+                    UDim2 listenPos = new UDim2(targetScaleX, targetScaleY, 210f, -20f);
+
+                    e.position = UDim2.Lerp(originalPos, listenPos, effectiveListenScore);
+
                     e.alpha = _bgTweener.CurrentValue
                             * (1f - _settingsTweener.CurrentValue * 0.4f)
                             * (1f - _startShrinkTweener.CurrentValue);
@@ -507,14 +554,21 @@ namespace CoreGame
                 {
                     e.alpha = _bgTweener.CurrentValue * (1f - _startTransitionTweener.CurrentValue);
 
-                    // Calculate dynamic X layout coordinate
-                    //float currentTargetX = ArtMathHelper.Lerp(0.38f, 0.42f, _settingsTweener.CurrentValue);
                     float activePanelValue = MathF.Max(_settingsTweener.CurrentValue, _modifiersTweener.CurrentValue);
-                    float currentTargetX = ArtMathHelper.Lerp(0.38f, 0.42f, activePanelValue);
+                    float baseTargetX = ArtMathHelper.Lerp(ArtMathHelper.Lerp(0.38f, 0.42f, activePanelValue), 0.5f, _startTransitionTweener.CurrentValue);
+                    float currentTargetX = ArtMathHelper.Lerp(baseTargetX, 0.5f, _startTransitionTweener.CurrentValue);
 
-                    // Swap out the static 0.38f in the second UDim2 container for currentTargetX
-                    e.position = UDim2.Lerp(new UDim2(0.38f, 0.5f, 0f, 410f), new UDim2(currentTargetX, 0.5f, 0f, 390f), _bgTweener.CurrentValue);
-                    e.size = new UDim2(0f, 0f, 500f * _bgTweener.CurrentValue, 6f);
+                    float effectiveListenScore = _listenScoreTweener.CurrentValue * (1f - activePanelValue);
+                    float targetScaleX = currentTargetX - 0.08f;
+                    float targetScaleY = 0.32f;
+
+                    UDim2 originalPos = UDim2.Lerp(new UDim2(0.38f, 0.5f, 0f, 410f), new UDim2(currentTargetX, 0.5f, 0f, 390f), _bgTweener.CurrentValue);
+                    UDim2 listenPos = new UDim2(targetScaleX, targetScaleY, 415f, 40f);
+
+                    e.position = UDim2.Lerp(originalPos, listenPos, effectiveListenScore);
+                    
+                    float trackWidth = ArtMathHelper.Lerp(500f * _bgTweener.CurrentValue, 410f * _bgTweener.CurrentValue, effectiveListenScore);
+                    e.size = new UDim2(0f, 0f, trackWidth, 6f);
                 }
             };
 
@@ -582,13 +636,18 @@ namespace CoreGame
                     e.color = new Color((byte)(_currentCoverColor.R * 0.4f), (byte)(_currentCoverColor.G * 0.4f), (byte)(_currentCoverColor.B * 0.4f));
                     e.alpha = _bgTweener.CurrentValue * (1f - _startTransitionTweener.CurrentValue);
 
-                    // Calculate dynamic X layout coordinate
-                    //float currentTargetX = ArtMathHelper.Lerp(0.38f, 0.42f, _settingsTweener.CurrentValue);
                     float activePanelValue = MathF.Max(_settingsTweener.CurrentValue, _modifiersTweener.CurrentValue);
-                    float currentTargetX = ArtMathHelper.Lerp(0.38f, 0.42f, activePanelValue);
+                    float baseTargetX = ArtMathHelper.Lerp(ArtMathHelper.Lerp(0.38f, 0.42f, activePanelValue), 0.5f, _startTransitionTweener.CurrentValue);
+                    float currentTargetX = ArtMathHelper.Lerp(baseTargetX, 0.5f, _startTransitionTweener.CurrentValue);
 
-                    // Swap out the static 0.38f in the second UDim2 container for currentTargetX
-                    e.position = UDim2.Lerp(new UDim2(0.38f, 0.5f, -250f, 425f), new UDim2(currentTargetX, 0.5f, -250f, 405f), _bgTweener.CurrentValue);
+                    float effectiveListenScore = _listenScoreTweener.CurrentValue * (1f - activePanelValue);
+                    float targetScaleX = currentTargetX - 0.08f;
+                    float targetScaleY = 0.32f;
+
+                    UDim2 originalPos = UDim2.Lerp(new UDim2(0.38f, 0.5f, -250f, 425f), new UDim2(currentTargetX, 0.5f, -250f, 405f), _bgTweener.CurrentValue);
+                    UDim2 listenPos = new UDim2(targetScaleX, targetScaleY, 210f, 60f);
+
+                    e.position = UDim2.Lerp(originalPos, listenPos, effectiveListenScore);
 
                     float time = GetMusicTimePlayed(_currentAudioKey);
                     e.text = $"{(int)(time / 60)}:{(int)(time % 60):D2}";
@@ -609,13 +668,18 @@ namespace CoreGame
                     e.color = new Color((byte)(_currentCoverColor.R * 0.4f), (byte)(_currentCoverColor.G * 0.4f), (byte)(_currentCoverColor.B * 0.4f));
                     e.alpha = _bgTweener.CurrentValue * (1f - _startTransitionTweener.CurrentValue);
 
-                    // Calculate dynamic X layout coordinate
-                    //float currentTargetX = ArtMathHelper.Lerp(0.38f, 0.42f, _settingsTweener.CurrentValue);
                     float activePanelValue = MathF.Max(_settingsTweener.CurrentValue, _modifiersTweener.CurrentValue);
-                    float currentTargetX = ArtMathHelper.Lerp(0.38f, 0.42f, activePanelValue);
+                    float baseTargetX = ArtMathHelper.Lerp(ArtMathHelper.Lerp(0.38f, 0.42f, activePanelValue), 0.5f, _startTransitionTweener.CurrentValue);
+                    float currentTargetX = ArtMathHelper.Lerp(baseTargetX, 0.5f, _startTransitionTweener.CurrentValue);
 
-                    // Swap out the static 0.38f in the second UDim2 container for currentTargetX
-                    e.position = UDim2.Lerp(new UDim2(0.38f, 0.5f, 250f, 425f), new UDim2(currentTargetX, 0.5f, 250f, 405f), _bgTweener.CurrentValue);
+                    float effectiveListenScore = _listenScoreTweener.CurrentValue * (1f - activePanelValue);
+                    float targetScaleX = currentTargetX - 0.08f;
+                    float targetScaleY = 0.32f;
+
+                    UDim2 originalPos = UDim2.Lerp(new UDim2(0.38f, 0.5f, 250f, 425f), new UDim2(currentTargetX, 0.5f, 250f, 405f), _bgTweener.CurrentValue);
+                    UDim2 listenPos = new UDim2(targetScaleX, targetScaleY, 620f, 60f);
+
+                    e.position = UDim2.Lerp(originalPos, listenPos, effectiveListenScore);
 
                     float timePlayed = GetMusicTimePlayed(_currentAudioKey);
                     float totalLength = GetMusicLength(_currentAudioKey);
@@ -706,10 +770,10 @@ namespace CoreGame
                     if (_isSettingsOpen && _isModifiersOpen)
                     {
                         _isModifiersOpen = false;
-                        _modifiersTweener.Restart(0.8f, 0f, Easing.Exponential, Direction.Out);
+                        _modifiersTweener.Restart(0.9f, 0f, Easing.Fluid, Direction.Out);
                     }
 
-                    _settingsTweener.Restart(duration: 0.8f, targetValue: _isSettingsOpen ? 1.0f : 0f, Easing.Exponential, Direction.Out);
+                    _settingsTweener.Restart(duration: 0.9f, targetValue: _isSettingsOpen ? 1.0f : 0f, Easing.Fluid, Direction.Out);
                 },
                 onUpdate = (btn) =>
                 {
@@ -774,10 +838,10 @@ namespace CoreGame
                     if (_isModifiersOpen && _isSettingsOpen)
                     {
                         _isSettingsOpen = false;
-                        _settingsTweener.Restart(0.8f, 0f, Easing.Exponential, Direction.Out);
+                        _settingsTweener.Restart(0.9f, 0f, Easing.Fluid, Direction.Out);
                     }
 
-                    _modifiersTweener.Restart(duration: 0.8f, targetValue: _isModifiersOpen ? 1.0f : 0f, Easing.Exponential, Direction.Out);
+                    _modifiersTweener.Restart(duration: 0.9f, targetValue: _isModifiersOpen ? 1.0f : 0f, Easing.Fluid, Direction.Out);
                 },
             };
 
@@ -926,16 +990,15 @@ namespace CoreGame
                 scrollDirection = Axis.Vertical,
                 showScrollbar = false,
                 smoothing = 18f,
-                clipMode = ClipMode.None,
+                clipMode = ClipMode.Clip,
                 alpha = 0f,
                 onUpdate = (e, dt) =>
                 {
                     // Smoothly interpolate positions from tucked away (-510px) to resting at the left edge (0px)
                     e.position = UDim2.Lerp(new UDim2(0f, 0, -480f, 60f), new UDim2(0f, 0f, 0f, 60f), MathF.Min(_settingsTweener.CurrentValue, _bgTweener.CurrentValue * (1f - _startTransitionTweener.CurrentValue)));
-                    e.alpha = _settingsTweener.CurrentValue;
 
                     // Pull dynamic color mutations matching your global album art tint machine
-                    e.color = new Color((byte)(_currentCoverColor.R * 0.85f), (byte)(_currentCoverColor.G * 0.85f), (byte)(_currentCoverColor.B * 0.85f), 100);
+                    //e.color = new Color((byte)(_currentCoverColor.R * 0.85f), (byte)(_currentCoverColor.G * 0.85f), (byte)(_currentCoverColor.B * 0.85f), 100);
                 }
             };
 
@@ -945,7 +1008,7 @@ namespace CoreGame
             {
                 Frame optionRow = new Frame
                 {
-                    position = new UDim2(0f, 0f, 0f, _settingsYOffset),
+                    position = new UDim2(0f, 0f, 10f, _settingsYOffset),
                     size = new UDim2(1f, 0f, 0f, 45f),
                     anchorX = AnchorX.Left,
                     anchorY = AnchorY.Top,
@@ -969,7 +1032,7 @@ namespace CoreGame
                     anchorY = AnchorY.Center,
                     textAnchorX = AnchorX.Center,
                     textAnchorY = AnchorY.Center,
-                    scale = 1.8f,
+                    scale = 1.5f,
                     color = Color.White
                 });
 
@@ -994,6 +1057,40 @@ namespace CoreGame
             Add(_shockwaveHolder);
 
             Add(_logoUI);
+
+            // === Scoreboard Panel ===
+            _scoreboardPanel = new Frame
+            {
+                anchorX = AnchorX.Center,
+                anchorY = AnchorY.Center,
+                size = new UDim2(0f, 0f, 450f, 360f),
+                onUpdate = (e, dt) =>
+                {
+                    float activePanelValue = MathF.Max(_settingsTweener.CurrentValue, _modifiersTweener.CurrentValue);
+                    float coverState = _bgTweener.CurrentValue * (1f - activePanelValue) * (1f - _startTransitionTweener.CurrentValue);
+                    float effectiveListenScore = _listenScoreTweener.CurrentValue * (1f - activePanelValue);
+
+                    // X coordinate is always centered relative to current cover/info center
+                    float baseTargetX = ArtMathHelper.Lerp(ArtMathHelper.Lerp(0.38f, 0.42f, activePanelValue), 0.5f, _startTransitionTweener.CurrentValue);
+                    float x = baseTargetX;
+                    
+                    // Y axis only: slides up from offscreen bottom (1.3f) to its position (0.70f)
+                    float y = ArtMathHelper.Lerp(1.3f, 0.70f, effectiveListenScore * coverState);
+
+                    e.position = new UDim2(x, y, 0f, 20f);
+
+                    byte r = (byte)(_currentCoverColor.R * 0.12f);
+                    byte g = (byte)(_currentCoverColor.G * 0.12f);
+                    byte b = (byte)(_currentCoverColor.B * 0.12f);
+
+                    // Only shown when effectiveListenScore is active
+                    float totalState = effectiveListenScore * coverState;
+                    e.color = new Color(r, g, b, (byte)(160 * totalState));
+                    e.alpha = totalState;
+                }
+            };
+            Add(_scoreboardPanel);
+            RefreshScoreboard();
 
             Add(settingsPanel);
             Add(modifiersPanel);
@@ -1061,6 +1158,187 @@ namespace CoreGame
 
             // Initialize OS Drag-and-Drop Handler
             OszDropHandler.Initialize();
+        }
+
+        private void RefreshScoreboard()
+        {
+            if (_scoreboardPanel == null) return;
+            
+            _scoreboardPanel.children.Clear();
+
+            if (_beatmap == null) return;
+
+            // Spotify style header
+            Frame header = new Frame
+            {
+                position = new UDim2(0f, 0f, 0f, 15f),
+                size = new UDim2(1f, 0f, 0f, 35f),
+                anchorX = AnchorX.Left,
+                anchorY = AnchorY.Top,
+                color = new Color(0, 0, 0, 0)
+            };
+
+            header.children.Add(new TextFrame
+            {
+                text = "Listen Scores",
+                fontName = "gsans_bold",
+                position = new UDim2(0.05f, 0.5f, 0f, 0f),
+                anchorX = AnchorX.Center,
+                anchorY = AnchorY.Center,
+                textAnchorX = AnchorX.Center,
+                textAnchorY = AnchorY.Center,
+                scale = 1.15f,
+                color = Color.White
+            });
+
+            _scoreboardPanel.children.Add(header);
+
+            // Fetch leaderboard from ScoreManager
+            string mapKey = _beatmap.FilePath;
+            var scores = ScoreManager.GetLeaderboard(mapKey, _beatmap.Title, _beatmap.Version, 5);
+
+            float yOffset = 50f;
+            for (int i = 0; i < scores.Count; i++)
+            {
+                var scoreEntry = scores[i];
+                int rank = i + 1;
+
+                float currentHoverScale = 1f;
+                int rankIndex = rank; // local copy for lambda
+                
+                var rowBtn = new Button
+                {
+                    position = new UDim2(0f, 0f, 10f, yOffset),
+                    size = new UDim2(0.95f, 0f, 0f, 55f),
+                    anchorX = AnchorX.Left,
+                    anchorY = AnchorY.Top,
+                    onClick = (b) => {
+                        PlaySFX("select");
+                    },
+                    onHoverEnter = (b) => {
+                        PlaySFX("hover");
+                    }
+                };
+
+                rowBtn.onUpdate = (btn) =>
+                {
+                    float hoveredScale = btn.IsHovered ? 1.03f : 1f;
+                    float targetScale = btn.IsPressed ? hoveredScale + 0.02f : hoveredScale;
+                    currentHoverScale = ArtMathHelper.Lerp(currentHoverScale, targetScale, 0.1f);
+                    
+                    rowBtn.size = new UDim2(0.95f, 0f, 0f, 55f * currentHoverScale);
+                    
+                    byte r = (byte)(_currentCoverColor.R * 0.7f);
+                    byte g = (byte)(_currentCoverColor.G * 0.7f);
+                    byte b = (byte)(_currentCoverColor.B * 0.7f);
+
+                    btn.color = new Color(r, g, b, 140);
+                    btn.hoverColor = new Color((byte)Math.Clamp(r + 20, 0, 255), (byte)Math.Clamp(g + 20, 0, 255), (byte)Math.Clamp(b + 20, 0, 255), 190);
+                    btn.pressedColor = new Color((byte)Math.Clamp(r + 40, 0, 255), (byte)Math.Clamp(g + 40, 0, 255), (byte)Math.Clamp(b + 40, 0, 255), 220);
+                };
+
+                // Rank badge (Left)
+                Color rankColor = Color.White;
+                if (rankIndex == 1) rankColor = new Color(255, 215, 0);       // Gold
+                else if (rankIndex == 2) rankColor = new Color(192, 192, 192); // Silver
+                else if (rankIndex == 3) rankColor = new Color(205, 127, 50);  // Bronze
+
+                var rankBadge = new TextFrame
+                {
+                    text = $"#{rankIndex}",
+                    fontName = "gsans_bold",
+                    position = new UDim2(0.04f, 0.5f, 0f, 0f),
+                    anchorX = AnchorX.Left,
+                    anchorY = AnchorY.Center,
+                    textAnchorX = AnchorX.Left,
+                    textAnchorY = AnchorY.Center,
+                    scale = 1.05f,
+                    color = rankColor
+                };
+                rowBtn.children.Add(rankBadge);
+
+                // Player name + Mods capsule
+                string displayName = scoreEntry.PlayerName;
+                var nameText = new TextFrame
+                {
+                    text = displayName,
+                    fontName = "gsans_bold",
+                    position = new UDim2(0.16f, 0.5f, 0f, -10f),
+                    anchorX = AnchorX.Left,
+                    anchorY = AnchorY.Center,
+                    textAnchorX = AnchorX.Left,
+                    textAnchorY = AnchorY.Center,
+                    scale = 0.95f,
+                    color = Color.White
+                };
+                rowBtn.children.Add(nameText);
+
+                // Mods badge capsule if any mods are active (e.g. DT, HD)
+                if (!string.IsNullOrEmpty(scoreEntry.Mods) && scoreEntry.Mods != "NM")
+                {
+                    var modCapsule = new TextFrame
+                    {
+                        text = scoreEntry.Mods,
+                        fontName = "gsans_bold",
+                        position = new UDim2(0.52f, 0.5f, 0f, -10f),
+                        anchorX = AnchorX.Left,
+                        anchorY = AnchorY.Center,
+                        textAnchorX = AnchorX.Left,
+                        textAnchorY = AnchorY.Center,
+                        scale = 0.75f,
+                        color = new Color(30, 215, 96),
+                        backgroundColor = new Color(0, 0, 0),
+                        backgroundAlpha = 0.6f,
+                        backgroundPadding = 4f
+                    };
+                    rowBtn.children.Add(modCapsule);
+                }
+
+                // Stats (Bottom Left: Accuracy and Max Combo)
+                string stats = $"{scoreEntry.Accuracy:F2}%  //  {scoreEntry.MaxCombo}x";
+                var statsText = new TextFrame
+                {
+                    text = stats,
+                    fontName = "gsans",
+                    position = new UDim2(0.16f, 0.5f, 0f, 10f),
+                    anchorX = AnchorX.Left,
+                    anchorY = AnchorY.Center,
+                    textAnchorX = AnchorX.Left,
+                    textAnchorY = AnchorY.Center,
+                    scale = 0.75f,
+                    color = new Color(175, 175, 175)
+                };
+                rowBtn.children.Add(statsText);
+
+                // Score (Right)
+                var scoreText = new TextFrame
+                {
+                    text = $"{scoreEntry.Score:N0}",
+                    fontName = "gsans_bold",
+                    position = new UDim2(0.92f, 0.5f, -12f, 0f),
+                    anchorX = AnchorX.Right,
+                    anchorY = AnchorY.Center,
+                    textAnchorX = AnchorX.Right,
+                    textAnchorY = AnchorY.Center,
+                    scale = 1.0f,
+                    color = Color.White
+                };
+                rowBtn.children.Add(scoreText);
+
+                // Right-Edge Color Stripe (Vertical color bar matching ranking colors)
+                var edgeStripe = new Frame
+                {
+                    position = new UDim2(1f, 0.5f, -4f, 0f),
+                    size = new UDim2(0f, 0f, 4f, 30f),
+                    anchorX = AnchorX.Right,
+                    anchorY = AnchorY.Center,
+                    color = rankColor
+                };
+                rowBtn.children.Add(edgeStripe);
+
+                _scoreboardPanel.children.Add(rowBtn);
+                yOffset += 65f;
+            }
         }
     }
 }

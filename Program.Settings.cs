@@ -15,148 +15,181 @@ namespace CoreGame
             if (currentPage != "" && currentPage == "Volumes")
             {
                 // --- Main Volume ---
-                SliderFrame sliderMainVolume = new SliderFrame
+                Frame mainVolumeFrame = new Frame
                 {
-                    fontName = "gsans_bold",
-                    title = "Main Volume",
-                    fontScale = 1.35f,
-                    position = new UDim2(0.5f, 0f, 0f, _settingsYOffset),
-                    size = new UDim2(.9f, 0f, 0f, 75f),
-                    fillColor = new Color(230, 230, 230),
-                    resetBtnColor = new Color(230, 230, 230),
-                    resetBtnHoverColor = Color.White,
-                    handleColor = Color.White,
-                    handleWidth = 15f,
-                    anchorX = AnchorX.Center,
+                    position = new UDim2(0f, 0f, 10f, _settingsYOffset),
+                    size = new UDim2(.9f, 0f, 0f, 55f),
+                    anchorX = AnchorX.Left,
                     anchorY = AnchorY.Top,
-                    currentValue = _targetVolume,
                     onUpdate = (e, dt) =>
                     {
-                        byte r = (byte)(_currentCoverColor.R * 0.85f);
-                        byte g = (byte)(_currentCoverColor.G * 0.85f);
-                        byte b = (byte)(_currentCoverColor.B * 0.85f);
+                        byte r = (byte)(_currentCoverColor.R * 0.7f);
+                        byte g = (byte)(_currentCoverColor.G * 0.7f);
+                        byte b = (byte)(_currentCoverColor.B * 0.7f);
 
-                        // 3. Apply the colors dynamically
-                        e.trackColor = new Color(r, g, b, 175);
-                        e.resetBtnColor = new Color(r, g, b, 255);
+                        e.color = new Color(r, g, b, 175);
                     },
-                    onValueChanges = (e) =>
+                    children = new List<ArtObject>
                     {
-                        _targetVolume = e.currentValue;
-                        _audioTweeners[_currentAudioKey].Restart(0.5f, _targetVolume, Easing.Cubic, Direction.Out);
-                        SaveSettings();
+                        new SliderFrame
+                        {
+                            fontName = "gsans_bold",
+                            title = "Main Volume",
+                            fontScale = 1.15f,
+                            fillColor = new Color(230, 230, 230),
+                            resetBtnColor = new Color("#FF6666"),
+                            resetBtnHoverColor = Color.White,
+                            size = new UDim2(.95f, 1f),
+                            position = new UDim2(0.5f, 0.5f),
+                            handleColor = Color.White,
+                            handleWidth = 15f,
+                            anchorX = AnchorX.Center,
+                            anchorY = AnchorY.Center,
+                            currentValue = _targetVolume,
+                            trackColor = new Color(100, 100, 100, 75),
+                            onValueChanges = (e) =>
+                            {
+                                _targetVolume = e.currentValue;
+                                _audioTweeners[_currentAudioKey].Restart(0.7f, _targetVolume, Easing.Exponential, Direction.Out);
+                                SaveSettings();
+                            }
+                        }
                     }
                 };
-                settingsPanel.children.Add(sliderMainVolume);
-                _settingsYOffset += 80f;
+                settingsPanel.children.Add(mainVolumeFrame);
+                _settingsYOffset += 60f;
 
                 // --- Effects Volume ---
-                SliderFrame sliderEffectVolume = new SliderFrame
+                Frame effectFrame = new Frame
                 {
-                    fontName = "gsans_bold",
-                    title = "Effects Volume",
-                    fontScale = 1.35f,
-                    position = new UDim2(0.5f, 0f, 0f, _settingsYOffset),
-                    size = new UDim2(.9f, 0f, 0f, 75f),
-                    fillColor = new Color(230, 230, 230),
-                    resetBtnColor = new Color(230, 230, 230),
-                    resetBtnHoverColor = Color.White,
-                    handleColor = Color.White,
-                    handleWidth = 15f,
-                    anchorX = AnchorX.Center,
+                    position = new UDim2(0f, 0f, 10f, _settingsYOffset),
+                    size = new UDim2(.9f, 0f, 0f, 55f),
+                    anchorX = AnchorX.Left,
                     anchorY = AnchorY.Top,
-                    currentValue = _effectsVolume,
                     onUpdate = (e, dt) =>
                     {
-                        byte r = (byte)(_currentCoverColor.R * 0.85f);
-                        byte g = (byte)(_currentCoverColor.G * 0.85f);
-                        byte b = (byte)(_currentCoverColor.B * 0.85f);
+                        byte r = (byte)(_currentCoverColor.R * 0.7f);
+                        byte g = (byte)(_currentCoverColor.G * 0.7f);
+                        byte b = (byte)(_currentCoverColor.B * 0.7f);
 
                         // 3. Apply the colors dynamically
-                        e.trackColor = new Color(r, g, b, 175);
-                        e.resetBtnColor = new Color(r, g, b, 255);
+                        e.color = new Color(r, g, b, 175);
                     },
-                    onValueChanges = (e) =>
+                    children = new List<ArtObject>
                     {
-                        _effectsVolume = e.currentValue;
-                        SetSFXVolume("hover", e.currentValue);
-                        SetSFXVolume("select", e.currentValue);
-                        SetSFXVolume("beat", e.currentValue);
-                        SetSFXVolume("dwbeat", e.currentValue);
-                        SaveSettings();
+                        new SliderFrame
+                        {
+                            fontName = "gsans_bold",
+                            title = "Effects Volume",
+                            fontScale = 1.15f,
+                            fillColor = new Color(230, 230, 230),
+                            resetBtnColor = new Color("#FF6666"),
+                            resetBtnHoverColor = Color.White,
+                            size = new UDim2(.95f, 1f),
+                            position = new UDim2(0.5f, 0.5f),
+                            handleColor = Color.White,
+                            handleWidth = 15f,
+                            anchorX = AnchorX.Center,
+                            anchorY = AnchorY.Center,
+                            currentValue = _effectsVolume,
+                            trackColor = new Color(100, 100, 100, 75),
+                            onValueChanges = (e) =>
+                            {
+                                _effectsVolume = e.currentValue;
+                                SetSFXVolume("hover", e.currentValue);
+                                SetSFXVolume("select", e.currentValue);
+                                SetSFXVolume("beat", e.currentValue);
+                                SetSFXVolume("dwbeat", e.currentValue);
+                                SaveSettings();
+                            }
+                        }
                     }
                 };
-                settingsPanel.children.Add(sliderEffectVolume);
-                _settingsYOffset += 80f;
+                settingsPanel.children.Add(effectFrame);
+                _settingsYOffset += 60f;
             }
             
             if (currentPage != "" && currentPage == "Audio Offset")
             {
                 // --- Audio Offset ---
-                SliderFrame sliderAudioOffset = new SliderFrame
+                Frame audioOffsetFrame = new Frame
                 {
-                    fontName = "gsans_bold",
-                    title = "Audio Offset",
-                    fontScale = 1.35f,
-                    position = new UDim2(0.5f, 0f, 0f, _settingsYOffset),
-                    size = new UDim2(.9f, 0f, 0f, 75f),
-                    fillColor = new Color(230, 230, 230),
-                    resetBtnColor = new Color(230, 230, 230),
-                    resetBtnHoverColor = Color.White,
-                    handleColor = Color.White,
-                    handleWidth = 15f,
-                    anchorX = AnchorX.Center,
+                    position = new UDim2(0f, 0f, 10f, _settingsYOffset),
+                    size = new UDim2(.9f, 0f, 0f, 55f),
+                    anchorX = AnchorX.Left,
                     anchorY = AnchorY.Top,
-                    minValue = -80f,
-                    maxValue = 80f,
-                    defaultValue = 0,
-                    currentValue = _audioOffset,
                     onUpdate = (e, dt) =>
                     {
-                        byte r = (byte)(_currentCoverColor.R * 0.85f);
-                        byte g = (byte)(_currentCoverColor.G * 0.85f);
-                        byte b = (byte)(_currentCoverColor.B * 0.85f);
+                        byte r = (byte)(_currentCoverColor.R * 0.7f);
+                        byte g = (byte)(_currentCoverColor.G * 0.7f);
+                        byte b = (byte)(_currentCoverColor.B * 0.7f);
 
                         // 3. Apply the colors dynamically
-                        e.trackColor = new Color(r, g, b, 175);
-                        e.resetBtnColor = new Color(r, g, b, 255);
+                        e.color = new Color(r, g, b, 175);
                     },
-                    onValueChanges = (e) =>
+                    children = new List<ArtObject>
                     {
-                        _audioOffset = e.currentValue;
-                        if (_rythmIndexer != null)
+                        new SliderFrame
                         {
-                            _rythmIndexer.MusicOffset = e.currentValue;
+                            fontName = "gsans_bold",
+                            title = "Audio Offset",
+                            fontScale = 1.15f,
+                            fillColor = new Color(230, 230, 230),
+                            resetBtnColor = new Color("#FF6666"),
+                            resetBtnHoverColor = Color.White,
+                            size = new UDim2(.95f, 1f),
+                            position = new UDim2(0.5f, 0.5f),
+                            handleColor = Color.White,
+                            handleWidth = 15f,
+                            anchorX = AnchorX.Center,
+                            anchorY = AnchorY.Center,
+                            minValue = -80f,
+                            maxValue = 80f,
+                            defaultValue = 0,
+                            currentValue = _audioOffset,
+                            trackColor = new Color(100, 100, 100, 75),
+                            onValueChanges = (e) =>
+                            {
+                                _audioOffset = e.currentValue;
+                                if (_rythmIndexer != null)
+                                {
+                                    _rythmIndexer.MusicOffset = e.currentValue;
+                                }
+                                SaveSettings();
+                            }
                         }
-                        SaveSettings();
                     }
                 };
-                settingsPanel.children.Add(sliderAudioOffset);
-                _settingsYOffset += 80f;
+                settingsPanel.children.Add(audioOffsetFrame);
+                _settingsYOffset += 60f;
             }
 
             if (currentPage != "" && currentPage == "Key Bindings")
             {
+                settingsPanel.children.Add(CreateKeybindRow("ListenScore", "Toggle Listen Score", _settingsYOffset, () => _keyToggleListenScore, (val) => _keyToggleListenScore = val));
+                _settingsYOffset += 60f;
                 settingsPanel.children.Add(CreateKeybindRow("ToggleCover", "Menu Space Toggle", _settingsYOffset, () => _keyToggleCover, (val) => _keyToggleCover = val));
-                _settingsYOffset += 50f;
+                _settingsYOffset += 60f;
                 settingsPanel.children.Add(CreateKeybindRow("StartGame", "Start/Play Song Key", _settingsYOffset, () => _keyStartGame, (val) => _keyStartGame = val));
-                _settingsYOffset += 50f;
+                _settingsYOffset += 60f;
                 settingsPanel.children.Add(CreateKeybindRow("ExitGameplay", "Exit Song Key", _settingsYOffset, () => _keyExitGameplay, (val) => _keyExitGameplay = val));
-                _settingsYOffset += 50f;
+                _settingsYOffset += 60f;
                 settingsPanel.children.Add(CreateKeybindRow("HitLeft", "Left Drum Hit", _settingsYOffset, () => _keyHitLeft, (val) => _keyHitLeft = val));
-                _settingsYOffset += 50f;
+                _settingsYOffset += 60f;
                 settingsPanel.children.Add(CreateKeybindRow("HitRight", "Right Drum Hit", _settingsYOffset, () => _keyHitRight, (val) => _keyHitRight = val));
-                _settingsYOffset += 50f;
+                _settingsYOffset += 60f;
             }
         }
 
         private Button CreateKeybindRow(string actionName, string title, float yOffset, Func<Keys> getKey, Action<Keys> setKey)
         {
+            float currentHoverScale = 0f;
+
             Button keybindBtn = new Button
             {
-                position = new UDim2(0.5f, 0f, 0f, yOffset),
-                size = new UDim2(.9f, 0f, 0f, 45f),
-                anchorX = AnchorX.Center,
+                position = new UDim2(0f, 0f, 10f, yOffset),
+                //size = new UDim2(.9f, 0f, 0f, 55f),
+                anchorX = AnchorX.Left,
                 anchorY = AnchorY.Top,
                 onClick = (b) =>
                 {
@@ -167,11 +200,16 @@ namespace CoreGame
                 onHoverEnter = (b) => PlaySFX("hover"),
                 onUpdate = (e) =>
                 {
-                    byte r = (byte)(_currentCoverColor.R * 0.85f);
-                    byte g = (byte)(_currentCoverColor.G * 0.85f);
-                    byte b = (byte)(_currentCoverColor.B * 0.85f);
+                    byte r = (byte)(_currentCoverColor.R * 0.7f);
+                    byte g = (byte)(_currentCoverColor.G * 0.7f);
+                    byte b = (byte)(_currentCoverColor.B * 0.7f);
 
                     bool isListeningThis = _isListeningForKey && _listeningActionName == actionName;
+
+                    float targetScale = e.IsHovered ? 1f : 0f;
+                    currentHoverScale = ArtMathHelper.Lerp(currentHoverScale, targetScale, 0.05f);
+
+                    e.size = new UDim2(.9f, 0f, 30f * currentHoverScale, 55f);
 
                     e.color = isListeningThis ? new Color(255, 255, 255, 200) : new Color(r, g, b, 175);
                     e.hoverColor = isListeningThis ? new Color(255, 255, 255, 255) : new Color(r, g, b, 235);
@@ -188,7 +226,7 @@ namespace CoreGame
                 anchorY = AnchorY.Center,
                 textAnchorX = AnchorX.Left,
                 textAnchorY = AnchorY.Center,
-                scale = 1.35f,
+                scale = 1.15f,
                 onUpdate = (t, dt) =>
                 {
                     bool isListeningThis = _isListeningForKey && _listeningActionName == actionName;
@@ -204,7 +242,7 @@ namespace CoreGame
                 anchorY = AnchorY.Center,
                 textAnchorX = AnchorX.Right,
                 textAnchorY = AnchorY.Center,
-                scale = 1.35f,
+                scale = 1.15f,
                 onUpdate = (t, dt) =>
                 {
                     bool isListeningThis = _isListeningForKey && _listeningActionName == actionName;

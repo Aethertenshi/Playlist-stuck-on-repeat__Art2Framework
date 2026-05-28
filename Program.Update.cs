@@ -150,6 +150,14 @@ namespace CoreGame
                 SetMusicSpeed(_currentAudioKey, _actualMusicSpeed, _adjustPitch);
             }
 
+            // --- Toggle Listen Score View ---
+            if (!_isStarting && Keyboard.IsKeyPressed(_keyToggleListenScore) && _isCoverView && !_isListeningForKey)
+            {
+                _isListenScoreMode = !_isListenScoreMode;
+                _listenScoreTweener.Restart(duration: 0.7f, targetValue: _isListenScoreMode ? 1.0f : 0f, Easing.Fluid, Direction.Out);
+                PlaySFX("select");
+            }
+
             // --- Game Start Sequence (Press TAB) ---
             if (!_isStarting && Keyboard.IsKeyPressed(_keyStartGame) && _isCoverView && !_isListeningForKey)
             {
@@ -161,16 +169,18 @@ namespace CoreGame
                 _startPhase = 1;
                 _startTimer = 0f;
 
-                // 1. Force close any open side panels
+                // 1. Force close any open side panels and Listen/Score mode
                 _settingsTweener.Restart(0.5f, 0f, Easing.Exponential, Direction.Out);
                 _modifiersTweener.Restart(0.5f, 0f, Easing.Exponential, Direction.Out);
+                _isListenScoreMode = false;
+                _listenScoreTweener.Restart(0.4f, 0f, Easing.Exponential, Direction.Out);
 
                 // 2. Trigger Phase 1 (UI Fades out, Cover slides to center, bgDrop darkens)
-                _startTransitionTweener.Restart(1.5f, 1.0f, Easing.Exponential, Direction.Out);
+                _startTransitionTweener.Restart(1.1f, 1.0f, Easing.Exponential, Direction.Out);
 
                 // 3. Fade out the music smoothly
                 if (_audioTweeners.ContainsKey(_currentAudioKey))
-                    _audioTweeners[_currentAudioKey].Restart(1.5f, 0f, Easing.Exponential, Direction.Out);
+                    _audioTweeners[_currentAudioKey].Restart(1.1f, 0f, Easing.Exponential, Direction.Out);
             }
 
             if (_isStarting)
@@ -181,7 +191,7 @@ namespace CoreGame
                 if (_startPhase == 1 && _startTimer >= 1.5f)
                 {
                     _startPhase = 2;
-                    _startShrinkTweener.Restart(1.2f, 1.0f, Easing.Exponential, Direction.In);
+                    _startShrinkTweener.Restart(.85f, 1.0f, Easing.Exponential, Direction.In);
                 }
                 // Wait another 1.5 seconds, then load the game
                 else if (_startPhase == 2 && _startTimer >= 3.0f)
@@ -401,6 +411,8 @@ namespace CoreGame
 
             // Track it in our dictionary
             _audioTweeners[_currentAudioKey] = fadeInTweener;
+
+            RefreshScoreboard();
         }
 
         private void RepopulatePlaylist()
@@ -696,6 +708,7 @@ namespace CoreGame
                         if (Enum.TryParse<Keys>(_settings.KeyExitGameplay, out var k3)) _keyExitGameplay = k3;
                         if (Enum.TryParse<Keys>(_settings.KeyHitLeft, out var k4)) _keyHitLeft = k4;
                         if (Enum.TryParse<Keys>(_settings.KeyHitRight, out var k5)) _keyHitRight = k5;
+                        if (Enum.TryParse<Keys>(_settings.KeyToggleListenScore, out var k6)) _keyToggleListenScore = k6;
 
                         Console.WriteLine($"[MainGame] Settings loaded successfully. Main={_targetVolume}, SFX={_effectsVolume}, Offset={_audioOffset}");
                     }
@@ -721,6 +734,7 @@ namespace CoreGame
                 _settings.KeyExitGameplay = _keyExitGameplay.ToString();
                 _settings.KeyHitLeft = _keyHitLeft.ToString();
                 _settings.KeyHitRight = _keyHitRight.ToString();
+                _settings.KeyToggleListenScore = _keyToggleListenScore.ToString();
 
                 var options = new JsonSerializerOptions { WriteIndented = true };
                 string json = JsonSerializer.Serialize(_settings, options);
