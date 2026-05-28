@@ -5,6 +5,7 @@ using ArtFrame.UserInterface;
 
 using static ArtFrame.AudioHelper;
 using static ArtFrame.InputHelper;
+using static ArtFrame.GraphicsHelper;
 
 namespace CoreGame
 {
@@ -179,6 +180,288 @@ namespace CoreGame
                 settingsPanel.children.Add(CreateKeybindRow("HitRight", "Right Drum Hit", _settingsYOffset, () => _keyHitRight, (val) => _keyHitRight = val));
                 _settingsYOffset += 60f;
             }
+
+            if (currentPage != "" && currentPage == "Gameplay Settings")
+            {
+                // --- Scroll Speed Slider ---
+                Frame scrollSpeedFrame = new Frame
+                {
+                    position = new UDim2(0f, 0f, 10f, _settingsYOffset),
+                    size = new UDim2(.9f, 0f, 0f, 55f),
+                    anchorX = AnchorX.Left,
+                    anchorY = AnchorY.Top,
+                    onUpdate = (e, dt) =>
+                    {
+                        byte r = (byte)(_currentCoverColor.R * 0.7f);
+                        byte g = (byte)(_currentCoverColor.G * 0.7f);
+                        byte b = (byte)(_currentCoverColor.B * 0.7f);
+                        e.color = new Color(r, g, b, 175);
+                    },
+                    children = new List<ArtObject>
+                    {
+                        new SliderFrame
+                        {
+                            fontName = "gsans_bold",
+                            title = "Scroll Speed",
+                            fontScale = 1.15f,
+                            fillColor = new Color(230, 230, 230),
+                            resetBtnColor = new Color("#FF6666"),
+                            resetBtnHoverColor = Color.White,
+                            size = new UDim2(.95f, 1f),
+                            position = new UDim2(0.5f, 0.5f),
+                            handleColor = Color.White,
+                            handleWidth = 15f,
+                            anchorX = AnchorX.Center,
+                            anchorY = AnchorY.Center,
+                            minValue = 0.1f,
+                            maxValue = 3.0f,
+                            defaultValue = 0.25f,
+                            currentValue = _settings.ScrollSpeed,
+                            trackColor = new Color(100, 100, 100, 75),
+                            onValueChanges = (e) =>
+                            {
+                                _settings.ScrollSpeed = e.currentValue;
+                                if (_taikofield != null)
+                                {
+                                    _taikofield.ScrollSpeed = e.currentValue;
+                                }
+                                SaveSettings();
+                            }
+                        }
+                    }
+                };
+                settingsPanel.children.Add(scrollSpeedFrame);
+                _settingsYOffset += 60f;
+
+                // --- Gameplay Scale Slider ---
+                Frame globalScaleFrame = new Frame
+                {
+                    position = new UDim2(0f, 0f, 10f, _settingsYOffset),
+                    size = new UDim2(.9f, 0f, 0f, 55f),
+                    anchorX = AnchorX.Left,
+                    anchorY = AnchorY.Top,
+                    onUpdate = (e, dt) =>
+                    {
+                        byte r = (byte)(_currentCoverColor.R * 0.7f);
+                        byte g = (byte)(_currentCoverColor.G * 0.7f);
+                        byte b = (byte)(_currentCoverColor.B * 0.7f);
+                        e.color = new Color(r, g, b, 175);
+                    },
+                    children = new List<ArtObject>
+                    {
+                        new SliderFrame
+                        {
+                            fontName = "gsans_bold",
+                            title = "Gameplay Scale",
+                            fontScale = 1.15f,
+                            fillColor = new Color(230, 230, 230),
+                            resetBtnColor = new Color("#FF6666"),
+                            resetBtnHoverColor = Color.White,
+                            size = new UDim2(.95f, 1f),
+                            position = new UDim2(0.5f, 0.5f),
+                            handleColor = Color.White,
+                            handleWidth = 15f,
+                            anchorX = AnchorX.Center,
+                            anchorY = AnchorY.Center,
+                            minValue = 0.5f,
+                            maxValue = 3.0f,
+                            defaultValue = 1.4f,
+                            currentValue = _settings.GlobalScale,
+                            trackColor = new Color(100, 100, 100, 75),
+                            onValueChanges = (e) =>
+                            {
+                                _settings.GlobalScale = e.currentValue;
+                                if (_taikofield != null)
+                                {
+                                    _taikofield.GlobalScale = e.currentValue;
+                                }
+                                SaveSettings();
+                            }
+                        }
+                    }
+                };
+                settingsPanel.children.Add(globalScaleFrame);
+                _settingsYOffset += 60f;
+            }
+            if (currentPage != "" && currentPage == "Graphics Config")
+            {
+                // --- Fullscreen Toggle ---
+                settingsPanel.children.Add(CreateToggleRow("Fullscreen Mode", _settingsYOffset, 
+                    () => _settings.Fullscreen, 
+                    (val) => {
+                        _settings.Fullscreen = val;
+                        ConfigureWindow(1920, 1080, "Playlist Stuck on Repeat", val);
+                    }));
+                _settingsYOffset += 60f;
+
+                // --- Gameplay FPS ---
+                settingsPanel.children.Add(CreateCycleSetting("Gameplay FPS", _settingsYOffset, 
+                    new int[] { 30, 60, 80, 120, 250, 400, 500 }, 
+                    () => _settings.GameplayFps, 
+                    (val) => {
+                        _settings.GameplayFps = val;
+                        if (_startPhase == 3) SetFrameRate(val);
+                    }));
+                _settingsYOffset += 60f;
+
+                // --- Menu FPS ---
+                settingsPanel.children.Add(CreateCycleSetting("Menu FPS", _settingsYOffset, 
+                    new int[] { 30, 60, 80, 120, 250, 400, 500 }, 
+                    () => _settings.MenuFps, 
+                    (val) => {
+                        _settings.MenuFps = val;
+                        if (_startPhase != 3) SetFrameRate(val);
+                    }));
+                _settingsYOffset += 60f;
+
+                // --- Gameplay Polling Rate ---
+                settingsPanel.children.Add(CreateCycleSetting("Gameplay Polling Rate", _settingsYOffset, 
+                    new int[] { 100, 250, 400, 900, 1200 }, 
+                    () => _settings.GameplayPollingRate, 
+                    (val) => {
+                        _settings.GameplayPollingRate = val;
+                        if (_startPhase == 3) SetInputFramerate(val);
+                    }));
+                _settingsYOffset += 60f;
+
+                // --- Menu Polling Rate ---
+                settingsPanel.children.Add(CreateCycleSetting("Menu Polling Rate", _settingsYOffset, 
+                    new int[] { 100, 250, 400, 900, 1200 }, 
+                    () => _settings.MenuPollingRate, 
+                    (val) => {
+                        _settings.MenuPollingRate = val;
+                        if (_startPhase != 3) SetInputFramerate(val);
+                    }));
+                _settingsYOffset += 60f;
+            }
+        }
+
+        private Button CreateToggleRow(string title, float yOffset, Func<bool> getState, Action<bool> setState)
+        {
+            float currentHoverScale = 0f;
+            Button toggleBtn = new Button
+            {
+                position = new UDim2(0f, 0f, 10f, yOffset),
+                anchorX = AnchorX.Left,
+                anchorY = AnchorY.Top,
+                onClick = (b) =>
+                {
+                    PlaySFX("select");
+                    setState(!getState());
+                    SaveSettings();
+                },
+                onHoverEnter = (b) => PlaySFX("hover"),
+                onUpdate = (e) =>
+                {
+                    byte r = (byte)(_currentCoverColor.R * 0.7f);
+                    byte g = (byte)(_currentCoverColor.G * 0.7f);
+                    byte b = (byte)(_currentCoverColor.B * 0.7f);
+
+                    float targetScale = e.IsHovered ? 1f : 0f;
+                    currentHoverScale = ArtMathHelper.Lerp(currentHoverScale, targetScale, 0.05f);
+
+                    e.size = new UDim2(.9f, 0f, 30f * currentHoverScale, 55f);
+
+                    e.color = new Color(r, g, b, 175);
+                    e.hoverColor = new Color(r, g, b, 235);
+                    e.pressedColor = new Color(255, 255, 255, 255);
+                }
+            };
+
+            toggleBtn.children.Add(new TextFrame
+            {
+                text = title,
+                fontName = "gsans_bold",
+                position = new UDim2(0.05f, 0.5f, 0, 0f),
+                anchorX = AnchorX.Left,
+                anchorY = AnchorY.Center,
+                textAnchorX = AnchorX.Left,
+                textAnchorY = AnchorY.Center,
+                scale = 1.15f,
+                color = Color.White
+            });
+
+            toggleBtn.children.Add(new TextFrame
+            {
+                fontName = "gsans_bold",
+                position = new UDim2(0.95f, 0.5f, 0, 0f),
+                anchorX = AnchorX.Right,
+                anchorY = AnchorY.Center,
+                textAnchorX = AnchorX.Right,
+                textAnchorY = AnchorY.Center,
+                scale = 1.15f,
+                color = Color.White,
+                onUpdate = (t, dt) =>
+                {
+                    t.text = getState() ? "ON" : "OFF";
+                }
+            });
+
+            return toggleBtn;
+        }
+
+        private Button CreateCycleSetting<T>(string title, float yOffset, T[] options, Func<T> getValue, Action<T> setValue)
+        {
+            float currentHoverScale = 0f;
+            Button cycleBtn = new Button
+            {
+                position = new UDim2(0f, 0f, 10f, yOffset),
+                anchorX = AnchorX.Left,
+                anchorY = AnchorY.Top,
+                onClick = (b) =>
+                {
+                    PlaySFX("select");
+                    T currentVal = getValue();
+                    int index = Array.IndexOf(options, currentVal);
+                    if (index == -1) index = 0;
+                    int nextIndex = (index + 1) % options.Length;
+                    setValue(options[nextIndex]);
+                    SaveSettings();
+                },
+                onHoverEnter = (b) => PlaySFX("hover"),
+                onUpdate = (e) =>
+                {
+                    byte r = (byte)(_currentCoverColor.R * 0.7f);
+                    byte g = (byte)(_currentCoverColor.G * 0.7f);
+                    byte b = (byte)(_currentCoverColor.B * 0.7f);
+
+                    float targetScale = e.IsHovered ? 1f : 0f;
+                    currentHoverScale = ArtMathHelper.Lerp(currentHoverScale, targetScale, 0.05f);
+
+                    e.size = new UDim2(.9f, 0f, 30f * currentHoverScale, 55f);
+
+                    e.color = new Color(r, g, b, 175);
+                    e.hoverColor = new Color(r, g, b, 235);
+                    e.pressedColor = new Color(r, g, b, 255);
+                }
+            };
+
+            cycleBtn.children.Add(new TextFrame
+            {
+                text = title,
+                fontName = "gsans_bold",
+                position = new UDim2(0.05f, 0.5f, 0, 0f),
+                anchorX = AnchorX.Left,
+                anchorY = AnchorY.Center,
+                textAnchorX = AnchorX.Left,
+                textAnchorY = AnchorY.Center,
+                scale = 1.15f,
+                color = Color.White
+            });
+
+            cycleBtn.children.Add(new TextFrame
+            {
+                fontName = "gsans_bold",
+                position = new UDim2(0.95f, 0.5f, 0, 0f),
+                anchorX = AnchorX.Right,
+                anchorY = AnchorY.Center,
+                textAnchorX = AnchorX.Right,
+                textAnchorY = AnchorY.Center,
+                scale = 1.15f,
+                onUpdate = (t, dt) => t.text = (getValue()?.ToString()?.ToUpper() ?? "") + " FPS",
+            });
+
+            return cycleBtn;
         }
 
         private Button CreateKeybindRow(string actionName, string title, float yOffset, Func<Keys> getKey, Action<Keys> setKey)
@@ -256,11 +539,12 @@ namespace CoreGame
 
         private Button CreateModToggle(string title, float yOffset, Func<bool> getState, Action<bool> setState)
         {
+            float currentHoverScale = 0f;
+
             Button toggleBtn = new Button
             {
-                position = new UDim2(0.5f, 0f, 0f, yOffset),
-                size = new UDim2(.9f, 0f, 0f, 45f),
-                anchorX = AnchorX.Center,
+                position = new UDim2(0.05f, 0f, 10f, yOffset), // align left like settings rows
+                anchorX = AnchorX.Left,
                 anchorY = AnchorY.Top,
                 onClick = (b) =>
                 {
@@ -270,19 +554,23 @@ namespace CoreGame
                 onHoverEnter = (b) => PlaySFX("hover"),
                 onUpdate = (e) =>
                 {
-                    byte r = (byte)(_currentCoverColor.R * 0.85f);
-                    byte g = (byte)(_currentCoverColor.G * 0.85f);
-                    byte b = (byte)(_currentCoverColor.B * 0.85f);
+                    byte r = (byte)(_currentCoverColor.R * 0.7f);
+                    byte g = (byte)(_currentCoverColor.G * 0.7f);
+                    byte b = (byte)(_currentCoverColor.B * 0.7f);
 
-                    bool isActive = getState();
+                    float targetScale = e.IsHovered ? 1f : 0f;
+                    currentHoverScale = ArtMathHelper.Lerp(currentHoverScale, targetScale, 0.05f);
 
-                    // Highlight solid white if active, otherwise dim dynamic tint
-                    e.color = isActive ? new Color(255, 255, 255, 200) : new Color(r, g, b, 175);
-                    e.hoverColor = isActive ? new Color(255, 255, 255, 255) : new Color(r, g, b, 235);
+                    // Height pop micro-animation matching settings!
+                    e.size = new UDim2(.9f, 0f, 30f * currentHoverScale, 55f);
+
+                    e.color = new Color(r, g, b, 175);
+                    e.hoverColor = new Color(r, g, b, 235);
                     e.pressedColor = new Color(255, 255, 255, 255);
                 }
             };
 
+            // Title label on the left
             toggleBtn.children.Add(new TextFrame
             {
                 text = title,
@@ -292,11 +580,24 @@ namespace CoreGame
                 anchorY = AnchorY.Center,
                 textAnchorX = AnchorX.Left,
                 textAnchorY = AnchorY.Center,
-                scale = 1.35f,
+                scale = 1.15f,
+                color = Color.White
+            });
+
+            // Status label (ON/OFF) on the right
+            toggleBtn.children.Add(new TextFrame
+            {
+                fontName = "gsans_bold",
+                position = new UDim2(0.95f, 0.5f, 0, 0f),
+                anchorX = AnchorX.Right,
+                anchorY = AnchorY.Center,
+                textAnchorX = AnchorX.Right,
+                textAnchorY = AnchorY.Center,
+                scale = 1.15f,
+                color = Color.White,
                 onUpdate = (t, dt) =>
                 {
-                    // Dark text if the button is highlighted, white if dim
-                    t.color = getState() ? Color.Black : Color.White;
+                    t.text = getState() ? "ON" : "OFF";
                 }
             });
 

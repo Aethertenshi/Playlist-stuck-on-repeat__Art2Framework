@@ -9,5 +9,6 @@ namespace CoreGame
         public float DriftSpeedY { get; set; }
         public float BaseSize { get; set; }
         public float PulsePhase { get; set; }
+        public byte Alpha { get; set; }
     }
 }

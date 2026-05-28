@@ -40,9 +40,9 @@ namespace CoreGame
             // Load persistent game settings
             LoadSettings();
 
-            ConfigureWindow(width: 1920, height: 1080, fullscreen: false);
-            SetInputFramerate(300);
-            SetFrameRate(120);
+            ConfigureWindow(width: 1920, height: 1080, title: "Playlist Stuck on Repeat", fullscreen: _settings.Fullscreen);
+            SetInputFramerate(_settings.MenuPollingRate);
+            SetFrameRate(_settings.MenuFps);
 
             LoadSFX("normal", "sounds/hitsounds/taiko-soft-hitnormal.wav");
             LoadSFX("whistle", "sounds/hitsounds/taiko-soft-hitwhistle.wav");
@@ -78,7 +78,8 @@ namespace CoreGame
                 position = new UDim2(0.5f, 0.5f),
                 anchorX = AnchorX.Center,
                 anchorY = AnchorY.Center,
-                GlobalScale = 1.4f,
+                ScrollSpeed = _settings.ScrollSpeed,
+                GlobalScale = _settings.GlobalScale,
                 ExitKey = _keyExitGameplay,
                 HitKeys = new Keys[] { _keyHitLeft, _keyHitRight },
                 alpha = 0f // Start hidden
@@ -90,7 +91,6 @@ namespace CoreGame
                 if ((hitSoundMask & 4) > 0) PlaySFX("finish");
                 if ((hitSoundMask & 8) > 0) PlaySFX("clap");
             };
-
             _taikofield.OnExit = () =>
             {
                 // Save player's score to ScoreManager if they actually played
@@ -129,8 +129,8 @@ namespace CoreGame
                 _isStarting = false;
                 _startPhase = 0;
 
-                SetInputFramerate(300);
-                SetFrameRate(120);
+                SetInputFramerate(_settings.MenuPollingRate);
+                SetFrameRate(_settings.MenuFps);
 
                 //_rythmIndexer = new RhythmIndexer(new InterpolatingAudioClock(), new RhythmTracker(), () => GetMusicTimePlayed(_currentAudioKey)) { Beatmap = _beatmap, MusicOffset = -55.35f };
                 _startShrinkTweener.Restart(1f, 0f, Easing.Exponential, Direction.Out);
@@ -237,7 +237,7 @@ namespace CoreGame
 
                         e.position = UDim2.Lerp(UDim2.FromScale(0.5f, 0.5f), UDim2.FromScale(targetX, targetY), _bgTweener.CurrentValue);
 
-                        _blur.BlurAmount = ArtMathHelper.Lerp(0f, 2.5f, 1f - _bgTweener.CurrentValue);
+                        _blur.BlurAmount = ArtMathHelper.Lerp(0f, 3.7f, 1f - MathF.Max(_bgTweener.CurrentValue, _peekBg));
                         e.alpha = 1f - _startShrinkTweener.CurrentValue;
                         e.BypassEffect = _bgTweener.CurrentValue >= 0.99f;
                     }
@@ -267,7 +267,7 @@ namespace CoreGame
                     e.alpha = 1f - _startShrinkTweener.CurrentValue;
 
                     // Input Polling
-                    if ((Keyboard.IsKeyPressed(_keyToggleCover) || (Mouse.LeftClicked() && !_isCoverView)) && !_isStarting && !_inIntro && !_isListeningForKey)
+                    if ((Keyboard.IsKeyPressed(_keyToggleCover) || (Mouse.LeftClicked() && !_isCoverView)) && !_isStarting && !_inIntro && !_isListeningForKey && !Mouse.RightDown())
                     {
                         _isCoverView = !_isCoverView;
                         _bgTweener.Restart(duration: 0.7f, targetValue: _isCoverView ? 1.0f : 0f, Easing.Exponential, Direction.Out);
@@ -291,12 +291,13 @@ namespace CoreGame
 
             // Initialize floating lens bokeh particles (Number 5)
             Random rand = new Random();
-            for (int i = 0; i < 25; i++)
+            for (int i = 0; i < 35; i++)
             {
-                float size = (float)rand.NextDouble() * 15f + 8f; // size between 8px and 23px
+                float size = (float)rand.NextDouble() * 30f + 15f; // richer bokeh sizes between 15px and 45px
+                byte particleAlpha = (byte)rand.Next(90, 140); // boosted opacity for better glow definition
                 CircleFrame partNode = new CircleFrame
                 {
-                    color = new Color(255, 255, 255, (byte)rand.Next(75, 100)), // soft glowing alpha
+                    color = new Color(255, 255, 255, particleAlpha),
                     anchorX = AnchorX.Center,
                     anchorY = AnchorY.Center,
                     size = new UDim2(0f, 0f, size, size),
@@ -310,7 +311,8 @@ namespace CoreGame
                     DriftSpeedX = (float)(rand.NextDouble() * 2.0 - 1.0) * 0.45f,
                     DriftSpeedY = (float)(rand.NextDouble() * 2.0 - 1.0) * 0.45f,
                     BaseSize = size,
-                    PulsePhase = (float)(rand.NextDouble() * Math.PI * 2)
+                    PulsePhase = (float)(rand.NextDouble() * Math.PI * 2),
+                    Alpha = particleAlpha
                 });
             }
 
@@ -348,7 +350,7 @@ namespace CoreGame
                         float targetX = ArtMathHelper.Lerp(currentTargetX, currentTargetX - 0.08f, effectiveListenScore);
                         float targetY = ArtMathHelper.Lerp(0.5f, 0.32f, effectiveListenScore);
 
-                        e.alpha = 1f - _startShrinkTweener.CurrentValue;
+                        e.alpha = (1f - _startShrinkTweener.CurrentValue) * (1f - _peekBg);
 
                         // The position retains its exact original behavior but tracks on the corrected curve
                         e.position = UDim2.Lerp(UDim2.FromScale(0.5f, 0.5f), UDim2.FromScale(targetX, targetY), _bgTweener.CurrentValue);
@@ -473,38 +475,27 @@ namespace CoreGame
                     e.text = _beatmap?.Title ?? "";
                     e.color = new Color((byte)(_currentCoverColor.R * MathF.Max(0.3f, _startTransitionTweener.CurrentValue)), (byte)(_currentCoverColor.G * MathF.Max(0.3f, _startTransitionTweener.CurrentValue)), (byte)(_currentCoverColor.B * MathF.Max(0.3f, _startTransitionTweener.CurrentValue)));
 
-                    // 1. REPLICATE THE EXACT COVER POSITION LOGIC
                     float activePanelValue = MathF.Max(_settingsTweener.CurrentValue, _modifiersTweener.CurrentValue);
-                    float effectiveListenScore = _listenScoreTweener.CurrentValue * (1f - activePanelValue);
-
                     float baseTargetX = ArtMathHelper.Lerp(0.38f, 0.42f, activePanelValue);
                     float currentTargetX = ArtMathHelper.Lerp(baseTargetX, 0.5f, _startTransitionTweener.CurrentValue);
+                    float effectiveListenScore = _listenScoreTweener.CurrentValue * (1f - activePanelValue);
 
-                    float coverTargetX = ArtMathHelper.Lerp(currentTargetX, currentTargetX - 0.08f, effectiveListenScore);
-                    float coverTargetY = ArtMathHelper.Lerp(0.5f, 0.32f, effectiveListenScore); // Reverted back to match true cover logic targets
+                    // L-swoop: X moves first (0..0.7), Y moves after (0.3..1.0) with overlap zone
+                    float rawTx = Math.Clamp(effectiveListenScore / 0.7f, 0f, 1f);
+                    float rawTy = Math.Clamp((effectiveListenScore - 0.3f) / 0.7f, 0f, 1f);
+                    float tx = 1f - MathF.Pow(1f - rawTx, 2f); // EaseOutQuad — fast rightward sweep
+                    float ty = rawTy * rawTy;                    // EaseInQuad  — slow then upward sweep
 
-                    // This matches the Cover's exact spatial center point at any given frame
-                    UDim2 currentCoverCenter = UDim2.Lerp(UDim2.FromScale(0.5f, 0.5f), UDim2.FromScale(coverTargetX, coverTargetY), _bgTweener.CurrentValue);
+                    // Scale components lerp with the vertical phase
+                    float scaleX = ArtMathHelper.Lerp(currentTargetX, currentTargetX - 0.08f, ty);
+                    float scaleY = ArtMathHelper.Lerp(0.5f, 0.32f, ty);
+                    float offsetX = ArtMathHelper.Lerp(-250f, 210f, tx);
+                    float offsetY = ArtMathHelper.Lerp(280f, -60f, ty);
 
-                    // 2. POSITION THE TITLE RELATIVE TO THAT CENTER
-                    // FIXED: When effectiveListenScore is 0 (Cover View), this math now evaluates 
-                    // EXACTLY to: ScaleX = currentTargetX, ScaleY = 0.5f, OffsetX = -250f, OffsetY = 320f.
-                    // It will stay perfectly locked to your original static positioning.
-                    float targetScaleX = ArtMathHelper.Lerp(currentTargetX, coverTargetX, _bgTweener.CurrentValue);
-                    float targetScaleY = ArtMathHelper.Lerp(0.5f, coverTargetY, _bgTweener.CurrentValue);
+                    UDim2 fullScreenPos = new UDim2(0.38f, 0.5f, -250f, 320f);
+                    UDim2 coverViewPos  = new UDim2(scaleX, scaleY, offsetX, offsetY);
+                    e.position = UDim2.Lerp(fullScreenPos, coverViewPos, _bgTweener.CurrentValue);
 
-                    float xOffset = ArtMathHelper.Lerp(-250f, 210f, effectiveListenScore);
-                    float yOffset = ArtMathHelper.Lerp(320f, -60f, effectiveListenScore);
-
-                    // We dynamically blend the scale baseline based on effectiveListenScore so it remains unmoving in Cover View
-                    e.position = new UDim2(
-                        ArtMathHelper.Lerp(currentTargetX, targetScaleX, effectiveListenScore),
-                        ArtMathHelper.Lerp(0.47f, targetScaleY, effectiveListenScore),
-                        xOffset,
-                        yOffset
-                    );
-
-                    // 3. ALPHA SINK
                     e.alpha = _bgTweener.CurrentValue
                             * (1f - _settingsTweener.CurrentValue * 0.4f)
                             * (1f - _startShrinkTweener.CurrentValue);
@@ -528,15 +519,21 @@ namespace CoreGame
                     float activePanelValue = MathF.Max(_settingsTweener.CurrentValue, _modifiersTweener.CurrentValue);
                     float baseTargetX = ArtMathHelper.Lerp(0.38f, 0.42f, activePanelValue);
                     float currentTargetX = ArtMathHelper.Lerp(baseTargetX, 0.5f, _startTransitionTweener.CurrentValue);
-
                     float effectiveListenScore = _listenScoreTweener.CurrentValue * (1f - activePanelValue);
-                    float targetScaleX = currentTargetX - 0.08f;
-                    float targetScaleY = 0.32f;
 
-                    UDim2 originalPos = UDim2.Lerp(new UDim2(0.38f, 0.5f, -250f, 350f), new UDim2(currentTargetX, 0.5f, -250f, 325f), _bgTweener.CurrentValue);
-                    UDim2 listenPos = new UDim2(targetScaleX, targetScaleY, 210f, -20f);
+                    float rawTx = Math.Clamp(effectiveListenScore / 0.7f, 0f, 1f);
+                    float rawTy = Math.Clamp((effectiveListenScore - 0.3f) / 0.7f, 0f, 1f);
+                    float tx = 1f - MathF.Pow(1f - rawTx, 2f);
+                    float ty = rawTy * rawTy;
 
-                    e.position = UDim2.Lerp(originalPos, listenPos, effectiveListenScore);
+                    float scaleX = ArtMathHelper.Lerp(currentTargetX, currentTargetX - 0.08f, ty);
+                    float scaleY = ArtMathHelper.Lerp(0.5f, 0.32f, ty);
+                    float offsetX = ArtMathHelper.Lerp(-250f, 210f, tx);
+                    float offsetY = ArtMathHelper.Lerp(325f, -20f, ty);
+
+                    UDim2 fullScreenPos = new UDim2(0.38f, 0.5f, -250f, 350f);
+                    UDim2 coverViewPos  = new UDim2(scaleX, scaleY, offsetX, offsetY);
+                    e.position = UDim2.Lerp(fullScreenPos, coverViewPos, _bgTweener.CurrentValue);
 
                     e.alpha = _bgTweener.CurrentValue
                             * (1f - _settingsTweener.CurrentValue * 0.4f)
@@ -555,18 +552,25 @@ namespace CoreGame
                     e.alpha = _bgTweener.CurrentValue * (1f - _startTransitionTweener.CurrentValue);
 
                     float activePanelValue = MathF.Max(_settingsTweener.CurrentValue, _modifiersTweener.CurrentValue);
-                    float baseTargetX = ArtMathHelper.Lerp(ArtMathHelper.Lerp(0.38f, 0.42f, activePanelValue), 0.5f, _startTransitionTweener.CurrentValue);
+                    float baseTargetX = ArtMathHelper.Lerp(0.38f, 0.42f, activePanelValue);
                     float currentTargetX = ArtMathHelper.Lerp(baseTargetX, 0.5f, _startTransitionTweener.CurrentValue);
-
                     float effectiveListenScore = _listenScoreTweener.CurrentValue * (1f - activePanelValue);
-                    float targetScaleX = currentTargetX - 0.08f;
-                    float targetScaleY = 0.32f;
 
-                    UDim2 originalPos = UDim2.Lerp(new UDim2(0.38f, 0.5f, 0f, 410f), new UDim2(currentTargetX, 0.5f, 0f, 390f), _bgTweener.CurrentValue);
-                    UDim2 listenPos = new UDim2(targetScaleX, targetScaleY, 415f, 40f);
+                    float rawTx = Math.Clamp(effectiveListenScore / 0.7f, 0f, 1f);
+                    float rawTy = Math.Clamp((effectiveListenScore - 0.3f) / 0.7f, 0f, 1f);
+                    float tx = 1f - MathF.Pow(1f - rawTx, 2f);
+                    float ty = rawTy * rawTy;
 
-                    e.position = UDim2.Lerp(originalPos, listenPos, effectiveListenScore);
-                    
+                    // anchorX = Center, so offsetX=0 means centered on the scale point
+                    float scaleX = ArtMathHelper.Lerp(currentTargetX, currentTargetX - 0.08f, ty);
+                    float scaleY = ArtMathHelper.Lerp(0.5f, 0.32f, ty);
+                    float offsetX = ArtMathHelper.Lerp(0f, 415f, tx);
+                    float offsetY = ArtMathHelper.Lerp(390f, 40f, ty);
+
+                    UDim2 fullScreenPos = new UDim2(0.38f, 0.5f, 0f, 410f);
+                    UDim2 coverViewPos  = new UDim2(scaleX, scaleY, offsetX, offsetY);
+                    e.position = UDim2.Lerp(fullScreenPos, coverViewPos, _bgTweener.CurrentValue);
+
                     float trackWidth = ArtMathHelper.Lerp(500f * _bgTweener.CurrentValue, 410f * _bgTweener.CurrentValue, effectiveListenScore);
                     e.size = new UDim2(0f, 0f, trackWidth, 6f);
                 }
@@ -637,17 +641,23 @@ namespace CoreGame
                     e.alpha = _bgTweener.CurrentValue * (1f - _startTransitionTweener.CurrentValue);
 
                     float activePanelValue = MathF.Max(_settingsTweener.CurrentValue, _modifiersTweener.CurrentValue);
-                    float baseTargetX = ArtMathHelper.Lerp(ArtMathHelper.Lerp(0.38f, 0.42f, activePanelValue), 0.5f, _startTransitionTweener.CurrentValue);
+                    float baseTargetX = ArtMathHelper.Lerp(0.38f, 0.42f, activePanelValue);
                     float currentTargetX = ArtMathHelper.Lerp(baseTargetX, 0.5f, _startTransitionTweener.CurrentValue);
-
                     float effectiveListenScore = _listenScoreTweener.CurrentValue * (1f - activePanelValue);
-                    float targetScaleX = currentTargetX - 0.08f;
-                    float targetScaleY = 0.32f;
 
-                    UDim2 originalPos = UDim2.Lerp(new UDim2(0.38f, 0.5f, -250f, 425f), new UDim2(currentTargetX, 0.5f, -250f, 405f), _bgTweener.CurrentValue);
-                    UDim2 listenPos = new UDim2(targetScaleX, targetScaleY, 210f, 60f);
+                    float rawTx = Math.Clamp(effectiveListenScore / 0.7f, 0f, 1f);
+                    float rawTy = Math.Clamp((effectiveListenScore - 0.3f) / 0.7f, 0f, 1f);
+                    float tx = 1f - MathF.Pow(1f - rawTx, 2f);
+                    float ty = rawTy * rawTy;
 
-                    e.position = UDim2.Lerp(originalPos, listenPos, effectiveListenScore);
+                    float scaleX = ArtMathHelper.Lerp(currentTargetX, currentTargetX - 0.08f, ty);
+                    float scaleY = ArtMathHelper.Lerp(0.5f, 0.32f, ty);
+                    float offsetX = ArtMathHelper.Lerp(-250f, 210f, tx);
+                    float offsetY = ArtMathHelper.Lerp(405f, 60f, ty);
+
+                    UDim2 fullScreenPos = new UDim2(0.38f, 0.5f, -250f, 425f);
+                    UDim2 coverViewPos  = new UDim2(scaleX, scaleY, offsetX, offsetY);
+                    e.position = UDim2.Lerp(fullScreenPos, coverViewPos, _bgTweener.CurrentValue);
 
                     float time = GetMusicTimePlayed(_currentAudioKey);
                     e.text = $"{(int)(time / 60)}:{(int)(time % 60):D2}";
@@ -669,17 +679,23 @@ namespace CoreGame
                     e.alpha = _bgTweener.CurrentValue * (1f - _startTransitionTweener.CurrentValue);
 
                     float activePanelValue = MathF.Max(_settingsTweener.CurrentValue, _modifiersTweener.CurrentValue);
-                    float baseTargetX = ArtMathHelper.Lerp(ArtMathHelper.Lerp(0.38f, 0.42f, activePanelValue), 0.5f, _startTransitionTweener.CurrentValue);
+                    float baseTargetX = ArtMathHelper.Lerp(0.38f, 0.42f, activePanelValue);
                     float currentTargetX = ArtMathHelper.Lerp(baseTargetX, 0.5f, _startTransitionTweener.CurrentValue);
-
                     float effectiveListenScore = _listenScoreTweener.CurrentValue * (1f - activePanelValue);
-                    float targetScaleX = currentTargetX - 0.08f;
-                    float targetScaleY = 0.32f;
 
-                    UDim2 originalPos = UDim2.Lerp(new UDim2(0.38f, 0.5f, 250f, 425f), new UDim2(currentTargetX, 0.5f, 250f, 405f), _bgTweener.CurrentValue);
-                    UDim2 listenPos = new UDim2(targetScaleX, targetScaleY, 620f, 60f);
+                    float rawTx = Math.Clamp(effectiveListenScore / 0.7f, 0f, 1f);
+                    float rawTy = Math.Clamp((effectiveListenScore - 0.3f) / 0.7f, 0f, 1f);
+                    float tx = 1f - MathF.Pow(1f - rawTx, 2f);
+                    float ty = rawTy * rawTy;
 
-                    e.position = UDim2.Lerp(originalPos, listenPos, effectiveListenScore);
+                    float scaleX = ArtMathHelper.Lerp(currentTargetX, currentTargetX - 0.08f, ty);
+                    float scaleY = ArtMathHelper.Lerp(0.5f, 0.32f, ty);
+                    float offsetX = ArtMathHelper.Lerp(250f, 620f, tx);
+                    float offsetY = ArtMathHelper.Lerp(405f, 60f, ty);
+
+                    UDim2 fullScreenPos = new UDim2(0.38f, 0.5f, 250f, 425f);
+                    UDim2 coverViewPos  = new UDim2(scaleX, scaleY, offsetX, offsetY);
+                    e.position = UDim2.Lerp(fullScreenPos, coverViewPos, _bgTweener.CurrentValue);
 
                     float timePlayed = GetMusicTimePlayed(_currentAudioKey);
                     float totalLength = GetMusicLength(_currentAudioKey);
@@ -904,7 +920,7 @@ namespace CoreGame
             // 0. Header
             Frame modifiersTitle = new Frame
             {
-                position = new UDim2(0f, 0f, 0f, _settingsYOffset),
+                position = new UDim2(0f, 0f, 0f, _modifiersYOffset),
                 size = new UDim2(1f, 0f, 0f, 45f),
                 anchorX = AnchorX.Left,
                 anchorY = AnchorY.Top,
@@ -1003,7 +1019,7 @@ namespace CoreGame
             };
 
             // --- Dummy Prototype Settings Rows ---
-            string[] options = { "Volumes", "Audio Offset", "Key Bindings", "Graphics Config" };
+            string[] options = { "Volumes", "Audio Offset", "Key Bindings", "Graphics Config", "Gameplay Settings" };
             foreach (var optionName in options)
             {
                 Frame optionRow = new Frame
@@ -1135,10 +1151,10 @@ namespace CoreGame
                 }
                 
                 if (_rythmIndexer.IsDownbeat)
-                    _logoTweener.SetValue(.92f);
+                    _logoTweener.SetValue(.93f);
                 else
-                    _logoTweener.SetValue(.97f);
-                _logoTweener.Restart(1.8f, 1f, Easing.Fluid, Direction.Out);
+                    _logoTweener.SetValue(.975f);
+                _logoTweener.Restart(1.4f, 1f, Easing.Fluid, Direction.Out);
             };
 
             AddHelper(_rythmIndexer);

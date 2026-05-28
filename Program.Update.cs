@@ -51,7 +51,7 @@ namespace CoreGame
                     _introAlpha = Math.Clamp(progress * 1.01f, 0f, 1f); // Smooth logo fade-in
 
                     // Trigger GridTransitionRadial at 95% completion of welcome.wav
-                    if (progress >= 0.915f && !_transitionFired)
+                    if (progress >= 0.935f && !_transitionFired)
                     {
                         _transitionFired = true;
                         _welcomeTransition.Play(1.5f, Easing.Cubic, Direction.Out);
@@ -61,7 +61,7 @@ namespace CoreGame
                         PlayMusic(_currentAudioKey);
                         SeekMusic(_currentAudioKey, _beatmap?.PreviewTime / 1000f ?? 0f);
                         if (_audioTweeners.ContainsKey(_currentAudioKey))
-                            _audioTweeners[_currentAudioKey].Restart(3.5f, _targetVolume, Easing.Cubic, Direction.Out);
+                            _audioTweeners[_currentAudioKey].Restart(3.5f, _targetVolume, Easing.Exponential, Direction.Out);
                     }
 
                     // Complete intro and play selected song
@@ -105,9 +105,16 @@ namespace CoreGame
                 float dynamicSize = part.BaseSize * (1.0f + MathF.Sin(part.PulsePhase) * 0.12f);
                 part.VisualNode.size = new UDim2(0f, 0f, dynamicSize, dynamicSize);
                 
+                // Inherit the cover color dynamically with a premium brightness boost
+                float brightnessScale = 1.4f;
+                byte r = (byte)Math.Clamp(_currentCoverColor.R * brightnessScale, 55, 255);
+                byte g = (byte)Math.Clamp(_currentCoverColor.G * brightnessScale, 55, 255);
+                byte b = (byte)Math.Clamp(_currentCoverColor.B * brightnessScale, 55, 255);
+                part.VisualNode.color = new Color(r, g, b, part.Alpha);
+
                 float introFactor = _inIntro ? _introAlpha : 1f;
                 float viewFactor = _isCoverView ? 0f : (1f - _startTransitionTweener.CurrentValue);
-                part.VisualNode.alpha = introFactor * viewFactor * 0.7f; // keep them soft
+                part.VisualNode.alpha = introFactor * viewFactor * 0.95f; // Boosted from 0.7f for beautiful background visibility
             }
 
             // Update Logo Shockwaves (Number 4)
@@ -130,7 +137,7 @@ namespace CoreGame
                     // Center inside blurBg (which aligns perfectly with logo center)
                     wave.VisualNode.position = UDim2.FromScale(0.5f, 0.5f);
                     wave.VisualNode.rotation = _logoRotation.CurrentValue;
-                    wave.VisualNode.alpha = (1f - wave.Progress) * 0.45f;
+                    wave.VisualNode.alpha = ((1f - wave.Progress) * 0.45f) * (1f - _peekBg);
                 }
             }
 
@@ -150,8 +157,18 @@ namespace CoreGame
                 SetMusicSpeed(_currentAudioKey, _actualMusicSpeed, _adjustPitch);
             }
 
+            // --- Background Peek ---
+            if (!_isCoverView && Mouse.RightDown())
+            {
+                _peekBg = ArtMathHelper.Lerp(_peekBg, 1f, dt * 12f);
+            }
+            if (!_isCoverView && Mouse.RightReleased())
+            {
+                _peekBg = ArtMathHelper.Lerp(_peekBg, 0f, dt * 10f);
+            }
+
             // --- Toggle Listen Score View ---
-            if (!_isStarting && Keyboard.IsKeyPressed(_keyToggleListenScore) && _isCoverView && !_isListeningForKey)
+            if (!_isStarting && Keyboard.IsKeyPressed(_keyToggleListenScore) && _isCoverView && !_isListeningForKey && !Mouse.RightDown())
             {
                 _isListenScoreMode = !_isListenScoreMode;
                 _listenScoreTweener.Restart(duration: 0.7f, targetValue: _isListenScoreMode ? 1.0f : 0f, Easing.Fluid, Direction.Out);
@@ -159,10 +176,10 @@ namespace CoreGame
             }
 
             // --- Game Start Sequence (Press TAB) ---
-            if (!_isStarting && Keyboard.IsKeyPressed(_keyStartGame) && _isCoverView && !_isListeningForKey)
+            if (!_isStarting && Keyboard.IsKeyPressed(_keyStartGame) && _isCoverView && !_isListeningForKey && !Mouse.RightDown())
             {
-                SetInputFramerate(1000);
-                SetFrameRate(300);
+                SetInputFramerate(_settings.GameplayPollingRate);
+                SetFrameRate(_settings.GameplayFps);
 
                 PlaySFX("play-click"); // Optional feedback
                 _isStarting = true;
@@ -233,6 +250,7 @@ namespace CoreGame
                         else if (_listeningActionName == "ExitGameplay") { _keyExitGameplay = key; if (_taikofield != null) _taikofield.ExitKey = key; }
                         else if (_listeningActionName == "HitLeft") { _keyHitLeft = key; if (_taikofield != null) _taikofield.HitKeys = new Keys[] { _keyHitLeft, _keyHitRight }; }
                         else if (_listeningActionName == "HitRight") { _keyHitRight = key; if (_taikofield != null) _taikofield.HitKeys = new Keys[] { _keyHitLeft, _keyHitRight }; }
+                        else if (_listeningActionName == "ListenScore") _keyToggleListenScore = key;
 
                         _isListeningForKey = false;
                         _listeningActionName = "";
@@ -393,7 +411,7 @@ namespace CoreGame
             // 3. Swap UI & Visuals Immediately (Feels incredibly snappy)
             Image newBg = LoadImage(_beatmap.BeatmapSetId.ToString(), _beatmap.GetBackgroundFullPath());
             if (bg != null) bg.texture = newBg;
-            _targetCoverColor = GetAverageColor(newBg, 15);
+            _targetCoverColor = GetAverageColor(newBg, 28);
 
             if (_rythmIndexer != null) _rythmIndexer.Beatmap = _beatmap;
 
@@ -710,6 +728,12 @@ namespace CoreGame
                         if (Enum.TryParse<Keys>(_settings.KeyHitRight, out var k5)) _keyHitRight = k5;
                         if (Enum.TryParse<Keys>(_settings.KeyToggleListenScore, out var k6)) _keyToggleListenScore = k6;
 
+                        if (_taikofield != null)
+                        {
+                            _taikofield.ScrollSpeed = _settings.ScrollSpeed;
+                            _taikofield.GlobalScale = _settings.GlobalScale;
+                        }
+
                         Console.WriteLine($"[MainGame] Settings loaded successfully. Main={_targetVolume}, SFX={_effectsVolume}, Offset={_audioOffset}");
                     }
                 }
@@ -727,6 +751,12 @@ namespace CoreGame
                 _settings.MainVolume = _targetVolume;
                 _settings.EffectsVolume = _effectsVolume;
                 _settings.AudioOffset = _audioOffset;
+
+                if (_taikofield != null)
+                {
+                    _settings.ScrollSpeed = _taikofield.ScrollSpeed;
+                    _settings.GlobalScale = _taikofield.GlobalScale;
+                }
 
                 // Save keybindings
                 _settings.KeyToggleCover = _keyToggleCover.ToString();
@@ -750,12 +780,13 @@ namespace CoreGame
 
         private Color GetDifficultyColor(OsuBeatmap bm)
         {
-            if (!float.TryParse(bm.GetDifficulty("ApproachRate"), System.Globalization.CultureInfo.InvariantCulture, out float ar)) ar = 5f;
-            if (ar < 4.0f) return new Color(118, 186, 255);
-            if (ar < 6.0f) return new Color(136, 224, 118);
-            if (ar < 8.0f) return new Color(255, 230, 118);
-            if (ar < 9.5f) return new Color(255, 118, 118);
-            return new Color(200, 118, 255);
+            float sr = GetRealStarRating(bm);
+            if (sr < 2.0f) return new Color(78, 186, 255);   // Easy — sky blue
+            if (sr < 2.7f) return new Color(136, 224, 118);  // Normal — green
+            if (sr < 4.0f) return new Color(255, 230, 118);  // Hard — yellow
+            if (sr < 5.3f) return new Color(255, 118, 118);  // Insane — red
+            if (sr < 6.5f) return new Color(200, 118, 255);  // Expert — purple
+            return new Color(101, 99, 222);                   // Expert+ — dark indigo
         }
     }
 }

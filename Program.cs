@@ -87,6 +87,7 @@ namespace CoreGame
         private bool _isListenScoreMode = false;
         private float _startTimer = 0f;
         private int _startPhase = 0;
+        private float _peekBg = 0f;
 
         // ─── Tweener Transition Pools ────────────────────────────────────────
         private Tweener _modifiersTweener = AddTween(new Tweener());
@@ -96,10 +97,12 @@ namespace CoreGame
         private Tweener _startTransitionTweener = AddTween(new Tweener());
         private Tweener _startShrinkTweener = AddTween(new Tweener());
         private Tweener _listenScoreTweener = AddTween(new Tweener());
+        private Tweener _peekBgTweener = AddTween(new Tweener());
 
         // ─── Intro Screen Welcome Lifecycle ──────────────────────────────────
         private bool _inIntro = true;
         private float _introAlpha = 0f;
+       
         private bool _transitionFired = false;
         private GridTransitionRadial _welcomeTransition = null!;
         private Tweener _logoRotation = AddTween(new Tweener());
