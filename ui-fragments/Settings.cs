@@ -27,6 +27,11 @@ namespace CoreGame
                 {
                     // Smoothly interpolate positions from tucked away (-510px) to resting at the left edge (0px)
                     e.position = UDim2.Lerp(new UDim2(0f, 0, -510f, 60f), new UDim2(0f, 0f, 0f, 60f), MathF.Min(_settingsTweener.CurrentValue, _bgTweener.CurrentValue * (1f - _startTransitionTweener.CurrentValue)));
+                    
+                    //e.alpha = _settingsTweener.CurrentValue;
+
+                    // Disable clipping (scissor rect) when completely off-screen to prevent MonoGame/XNA viewport overlap warnings
+                    e.clipMode = (e.position.OffsetX <= -509f) ? ClipMode.None : ClipMode.Clip;
 
                     // Pull dynamic color mutations matching your global album art tint machine
                     //e.color = new Color((byte)(_currentCoverColor.R * 0.85f), (byte)(_currentCoverColor.G * 0.85f), (byte)(_currentCoverColor.B * 0.85f), 100);
