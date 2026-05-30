@@ -8,6 +8,7 @@ using OsuLib.Models;
 
 // Bind strictly to your custom wrappers!
 using static ArtFrame.InputHelper;
+using static ArtFrame.AudioHelper;
 
 namespace CoreGame
 {
@@ -35,6 +36,9 @@ namespace CoreGame
         public int HitsMiss { get; private set; } = 0;
         public int MaxComboReached { get; private set; } = 0;
 
+        // Custom Mode Toggle State: false = "Single!" (Taps), true = "Stream!" (Holds)
+        private bool _isHoldMode = false;
+
         public float GetAccuracy()
         {
             int total = HitsPerfect + HitsGood + HitsOk + HitsMiss;
@@ -54,11 +58,15 @@ namespace CoreGame
         private readonly Image _circleTexture;
         private readonly string _fontName;
 
+        // Reverted back to a Single Track layout
         private Frame _leftTrack;
         private Frame _rightTrack;
         private ImageFrame _judgementRing;
+        private float _judgementRingScale = 1.0f;
+
         private TextFrame _scoreUI;
         private TextFrame _comboUI;
+        private TextFrame _modeUI; // Dynamic mode cue text
 
         private float BaseNoteScale = 40f;
         private float BaseJudgementOffsetX = 300f;
@@ -77,7 +85,6 @@ namespace CoreGame
         private List<HitErrorTick> _hitTicks = new List<HitErrorTick>();
         private List<double> _allHitErrors = new List<double>();
         private double _rollingAverageError = 0f;
-        private float _judgementRingScale = 1.0f;
 
         public TaikoPlayfield(Image circleTexture, string fontName = "gsans_bold")
         {
@@ -87,7 +94,7 @@ namespace CoreGame
             this.color = new Color(0, 0, 0, 0);
             this.alpha = 0f; // Starts invisible
 
-            // 1. Build Static Elements
+            // 1. Build Static Elements (Reverted to single line)
             _leftTrack = new Frame { anchorX = AnchorX.Left, anchorY = AnchorY.Center, color = Color.White };
             _rightTrack = new Frame { anchorX = AnchorX.Left, anchorY = AnchorY.Center, color = new Color(100, 100, 100, 255) };
 
@@ -96,7 +103,7 @@ namespace CoreGame
                 texture = _circleTexture,
                 anchorX = AnchorX.Center,
                 anchorY = AnchorY.Center,
-                color = Color.White,
+                color = new Color(50, 180, 255, 180), // Blue-tinted ring initially
                 fit = ObjectFit.Contain
             };
 
@@ -121,11 +128,24 @@ namespace CoreGame
                 position = new UDim2(0f, 1f, 20f, -20f)
             };
 
+            // Visible Text showing current mode
+            _modeUI = new TextFrame
+            {
+                fontName = _fontName,
+                text = "SINGLE!",
+                color = new Color(50, 180, 255, 255),
+                anchorX = AnchorX.Center,
+                anchorY = AnchorY.Center,
+                textAnchorX = AnchorX.Center,
+                textAnchorY = AnchorY.Center
+            };
+
             children.Add(_leftTrack);
             children.Add(_rightTrack);
             children.Add(_judgementRing);
             children.Add(_scoreUI);
             children.Add(_comboUI);
+            children.Add(_modeUI);
 
             // 3. Build Hit Error Bar & UR UI
             _hitErrorBarBg = new Frame
@@ -205,11 +225,10 @@ namespace CoreGame
 
                 if (isHold && hitObject is OsuSlider slider)
                 {
-                    //Console.WriteLine("Hold Note / Slider Duration: " + slider.DurationMs);
                     duration = slider.DurationMs;
                     holdBody = new Frame
                     {
-                        color = new Color(255, 180, 50, 100), // Beautiful semi-transparent warm yellow/orange
+                        color = new Color(255, 120, 50, 100), // Orange-tinted hold tracks
                         anchorX = AnchorX.Left,
                         anchorY = AnchorY.Center,
                         position = new UDim2(0f, 0.5f, 9999f, 0f),
@@ -218,10 +237,14 @@ namespace CoreGame
                     children.Add(holdBody); // Added first so it renders behind the note head
                 }
 
+                Color noteColor = isHold 
+                    ? new Color(255, 120, 50, 255) // Red/Orange for Holds
+                    : new Color(50, 200, 255, 255); // Blue for Taps
+
                 var noteVisual = new ImageFrame
                 {
                     texture = _circleTexture,
-                    color = isHold ? new Color(255, 180, 50, 255) : new Color(255, 235, 100, 255),
+                    color = noteColor,
                     anchorX = AnchorX.Center,
                     anchorY = AnchorY.Center,
                     fit = ObjectFit.Contain,
@@ -234,7 +257,7 @@ namespace CoreGame
                 _notes.Add(new TaikoNote
                 {
                     TargetTimeMs = hitObject.Time,
-                    HitSoundMask = hitObject.HitSound, // Grabs the bitmask from OsuLib
+                    HitSoundMask = hitObject.HitSound,
                     VisualNode = noteVisual,
                     IsHold = isHold,
                     DurationMs = duration,
@@ -263,6 +286,11 @@ namespace CoreGame
             HitsMiss = 0;
             MaxComboReached = 0;
 
+            _isHoldMode = false;
+            _modeUI.text = "SINGLE!";
+            _modeUI.color = new Color(50, 180, 255, 255);
+            _judgementRing.color = new Color(50, 180, 255, 180);
+
             // Clean up all dynamically generated nodes (including hold note tracks)
             foreach (var note in _notes)
             {
@@ -283,13 +311,16 @@ namespace CoreGame
             _allHitErrors.Clear();
             _rollingAverageError = 0f;
             _urText.text = "UR: --";
+            
             _judgementRingScale = 1.0f;
         }
+
         public override void Draw(float dt, Vector2 parentSize, Vector2 parentOrigin)
         {
             if (this.alpha <= 0f) return;
             base.Draw(dt, parentSize, parentOrigin);
         }
+
         public void UpdatePlayfield(float dt, float currentAudioTimeMs)
         {
             // 1. Smooth Intro Fade-In
@@ -305,11 +336,25 @@ namespace CoreGame
             _judgementRing.alpha = this.alpha;
             _scoreUI.alpha = this.alpha;
             _comboUI.alpha = this.alpha;
+            _modeUI.alpha = this.alpha;
 
-            // 2. Dynamic Runtime Scaling
+            // 2. Active Mouse Mode Toggle
+            if (Mouse.LeftClicked())
+            {
+                _isHoldMode = false;
+                PlaySFX("hover"); // satisfying dynamic mode swap tick
+            }
+            else if (Mouse.RightClicked())
+            {
+                _isHoldMode = true;
+                PlaySFX("hover");
+            }
+
+            // Dynamic Runtime Scaling
             float currentNoteScale = BaseNoteScale * GlobalScale;
             float currentJudgeOffsetX = BaseJudgementOffsetX * GlobalScale;
 
+            // Single Track Scaling
             _leftTrack.size = new UDim2(0f, 0f, currentJudgeOffsetX, 4f * GlobalScale);
             _leftTrack.position = new UDim2(0f, 0.5f, 0f, 0f);
 
@@ -319,8 +364,19 @@ namespace CoreGame
             // Smoothly decay the judgement ring pulse scale back to 1.0f
             _judgementRingScale += (1.0f - _judgementRingScale) * (dt * 15f);
 
+            // Update Judgement Ring visual cue tint based on active mode
+            _judgementRing.color = _isHoldMode 
+                ? new Color(255, 120, 50, 180) // Red/Orange tint for Stream Mode
+                : new Color(50, 180, 255, 180); // Blue tint for Single Mode
+
             _judgementRing.size = new UDim2(0f, 0f, currentNoteScale * _judgementRingScale, currentNoteScale * _judgementRingScale);
             _judgementRing.position = new UDim2(0f, 0.5f, currentJudgeOffsetX, 0f);
+
+            // Update Mode UI Text and Color
+            _modeUI.text = _isHoldMode ? "STREAM!" : "SINGLE!";
+            _modeUI.color = _isHoldMode ? new Color(255, 120, 50, 255) : new Color(50, 180, 255, 255);
+            _modeUI.position = new UDim2(0f, 0.5f, currentJudgeOffsetX, 55f * GlobalScale);
+            _modeUI.scale = 1.3f * GlobalScale;
 
             _scoreUI.scale = 2f * GlobalScale;
             _comboUI.scale = 1.8f * GlobalScale;
@@ -377,7 +433,7 @@ namespace CoreGame
             bool hitPressed = false;
             foreach (var key in HitKeys)
             {
-                if (Keyboard.IsKeyPressed(key)) //[cite: 10]
+                if (Keyboard.IsKeyPressed(key))
                 {
                     hitPressed = true;
                     break;
@@ -386,7 +442,7 @@ namespace CoreGame
 
             if (hitPressed)
             {
-                _judgementRingScale = 1.22f; // Trigger highly responsive ring expand/shrink pulse!
+                _judgementRingScale = 1.22f; // Trigger responsive ring pulse
 
                 var targetNote = _notes.FirstOrDefault(n =>
                     !n.IsProcessed &&
@@ -395,53 +451,68 @@ namespace CoreGame
 
                 if (targetNote != null)
                 {
-                    float signedError = (float)currentAudioTimeMs - (float)targetNote.TargetTimeMs;
-                    AddHitError(signedError);
-
-                    if (targetNote.IsHold)
+                    // Strict Mode Verification: Target note's hold type must match current toggled mode!
+                    if (targetNote.IsHold != _isHoldMode)
                     {
-                        targetNote.IsHolding = true;
-                        targetNote.HoldLastTickTime = currentAudioTimeMs;
+                        // Wrong Mode -> Auto Miss!
+                        targetNote.IsProcessed = true;
+                        targetNote.IsHit = false;
+                        HitsMiss++;
 
-                        OnPlayHitSound?.Invoke(targetNote.HitSoundMask);
-
-                        Combo++;
-                        Score += 150 * Combo; // High score reward for hold note head hit
-                        _scoreUI.text = Score.ToString();
+                        Combo = 0;
                         _comboUI.text = $"{Combo}x";
 
-                        // Trigger visual splash text
-                        targetNote.Velocity = new Vector2(-150f, -400f) * GlobalScale;
-                        SpawnFloatingText("Hold!", new Color(255, 180, 50), targetNote.Velocity * 0.8f, currentJudgeOffsetX);
+                        targetNote.Velocity = new Vector2(-150f, 600f) * GlobalScale; // Gravity fling down
+                        targetNote.VisualNode.color = targetNote.VisualNode.color * 0.4f;
+
+                        SpawnFloatingText("Wrong Mode!", new Color(255, 50, 50), targetNote.Velocity * 0.8f, currentJudgeOffsetX);
                     }
                     else
                     {
-                        targetNote.IsProcessed = true;
-                        targetNote.IsHit = true;
+                        // Mode is correct! Proceed with hit calculations
+                        float signedError = (float)currentAudioTimeMs - (float)targetNote.TargetTimeMs;
+                        AddHitError(signedError);
 
-                        float error = Math.Abs(signedError);
-                        int hitValue = 0;
-                        Color hitColor = Color.White;
+                        if (targetNote.IsHold)
+                        {
+                            targetNote.IsHolding = true;
+                            targetNote.HoldLastTickTime = currentAudioTimeMs;
 
-                        // Calculate Judgement
-                        if (error <= Window300) { hitValue = 300; hitColor = new Color(50, 200, 255); HitsPerfect++; }
-                        else if (error <= Window100) { hitValue = 100; hitColor = new Color(100, 255, 100); HitsGood++; }
-                        else if (error <= Window50) { hitValue = 50; hitColor = new Color(255, 150, 50); HitsOk++; }
+                            OnPlayHitSound?.Invoke(targetNote.HitSoundMask);
 
-                        // Apply Score & Sound
-                        Combo++;
-                        Score += hitValue * Combo;
-                        _scoreUI.text = Score.ToString();
-                        _comboUI.text = $"{Combo}x";
+                            Combo++;
+                            Score += 150 * Combo;
+                            _scoreUI.text = Score.ToString();
+                            _comboUI.text = $"{Combo}x";
 
-                        OnPlayHitSound?.Invoke(targetNote.HitSoundMask); // Fire sound event!
+                            targetNote.Velocity = new Vector2(-150f, -400f) * GlobalScale;
+                            SpawnFloatingText("Hold!", new Color(255, 150, 50), targetNote.Velocity * 0.8f, currentJudgeOffsetX);
+                        }
+                        else
+                        {
+                            targetNote.IsProcessed = true;
+                            targetNote.IsHit = true;
 
-                        // Fling Upwards & slightly left
-                        targetNote.Velocity = new Vector2(-150f, -600f) * GlobalScale;
-                        targetNote.VisualNode.color = new Color(255, 235, 100, 255) * 0.4f;
+                            float error = Math.Abs(signedError);
+                            int hitValue = 0;
+                            Color hitColor = Color.White;
 
-                        // Spawn physical floating text
-                        SpawnFloatingText(hitValue.ToString(), hitColor, targetNote.Velocity * 0.8f, currentJudgeOffsetX);
+                            if (error <= Window300) { hitValue = 300; hitColor = new Color(50, 200, 255); HitsPerfect++; }
+                            else if (error <= Window100) { hitValue = 100; hitColor = new Color(100, 255, 100); HitsGood++; }
+                            else if (error <= Window50) { hitValue = 50; hitColor = new Color(255, 150, 50); HitsOk++; }
+
+                            Combo++;
+                            Score += hitValue * Combo;
+                            _scoreUI.text = Score.ToString();
+                            _comboUI.text = $"{Combo}x";
+
+                            OnPlayHitSound?.Invoke(targetNote.HitSoundMask);
+
+                            targetNote.Velocity = new Vector2(-150f, -600f) * GlobalScale;
+                            targetNote.VisualNode.color = targetNote.VisualNode.color * 0.4f;
+
+                            SpawnFloatingText(hitValue.ToString(), hitColor, targetNote.Velocity * 0.8f, currentJudgeOffsetX);
+                        }
                     }
                 }
             }
@@ -453,7 +524,7 @@ namespace CoreGame
                 {
                     if (note.IsHolding)
                     {
-                        // Check if the user is still holding one of the gameplay keys
+                        // Check if the user is still holding one of the gameplay keys AND is in Stream mode
                         bool stillHolding = false;
                         foreach (var key in HitKeys)
                         {
@@ -472,7 +543,6 @@ namespace CoreGame
                             note.IsHolding = false;
                             HitsPerfect++;
 
-                            // Completion bonus
                             Combo++;
                             Score += 300 * Combo;
                             _scoreUI.text = Score.ToString();
@@ -481,7 +551,7 @@ namespace CoreGame
                             OnPlayHitSound?.Invoke(note.HitSoundMask);
 
                             note.Velocity = new Vector2(-150f, -600f) * GlobalScale;
-                            note.VisualNode.color = new Color(255, 180, 50, 255) * 0.4f;
+                            note.VisualNode.color = note.VisualNode.color * 0.4f;
 
                             SpawnFloatingText("Perfect!", new Color(50, 200, 255), note.Velocity * 0.8f, currentJudgeOffsetX);
 
@@ -491,7 +561,7 @@ namespace CoreGame
                                 note.HoldBodyNode = null;
                             }
                         }
-                        else if (!stillHolding) // Early release -> check thresholds!
+                        else if (!stillHolding || !_isHoldMode) // Early release or switched modes mid-hold -> triggers miss checks!
                         {
                             note.IsProcessed = true;
                             note.IsHolding = false;
@@ -499,7 +569,7 @@ namespace CoreGame
                             double heldTime = currentAudioTimeMs - note.TargetTimeMs;
                             double fraction = heldTime / note.DurationMs;
 
-                            if (fraction >= 0.5) // Held 1/2 or more -> Good!
+                            if (fraction >= 0.5 && stillHolding) // Held 1/2 or more -> Good!
                             {
                                 note.IsHit = true;
                                 HitsGood++;
@@ -508,12 +578,12 @@ namespace CoreGame
                                 _scoreUI.text = Score.ToString();
                                 _comboUI.text = $"{Combo}x";
 
-                                note.Velocity = new Vector2(-150f, -400f) * GlobalScale; // Fling up slightly
-                                note.VisualNode.color = new Color(255, 180, 50, 255) * 0.4f;
+                                note.Velocity = new Vector2(-150f, -400f) * GlobalScale;
+                                note.VisualNode.color = note.VisualNode.color * 0.4f;
 
                                 SpawnFloatingText("Decent!", new Color(100, 255, 100), note.Velocity * 0.8f, currentJudgeOffsetX);
                             }
-                            else if (fraction >= 0.333) // Held 1/3 or more -> Ok!
+                            else if (fraction >= 0.333 && stillHolding) // Held 1/3 or more -> Ok!
                             {
                                 note.IsHit = true;
                                 HitsOk++;
@@ -522,22 +592,23 @@ namespace CoreGame
                                 _scoreUI.text = Score.ToString();
                                 _comboUI.text = $"{Combo}x";
 
-                                note.Velocity = new Vector2(-150f, -200f) * GlobalScale; // Fling up very slightly
-                                note.VisualNode.color = new Color(255, 180, 50, 255) * 0.4f;
+                                note.Velocity = new Vector2(-150f, -200f) * GlobalScale;
+                                note.VisualNode.color = note.VisualNode.color * 0.4f;
 
                                 SpawnFloatingText("Meh.", new Color(255, 235, 100), note.Velocity * 0.8f, currentJudgeOffsetX);
                             }
-                            else // Held less than 1/3 -> Miss!
+                            else // Held less than 1/3 or switched modes
                             {
                                 note.IsHit = false;
                                 HitsMiss++;
                                 Combo = 0;
                                 _comboUI.text = $"{Combo}x";
 
-                                note.Velocity = new Vector2(-150f, 600f) * GlobalScale; // Fling down
-                                note.VisualNode.color = new Color(255, 180, 50, 255) * 0.4f;
+                                note.Velocity = new Vector2(-150f, 600f) * GlobalScale; // Fling down under gravity
+                                note.VisualNode.color = note.VisualNode.color * 0.4f;
 
-                                SpawnFloatingText("Let Go!", new Color(255, 50, 50), note.Velocity * 0.8f, currentJudgeOffsetX);
+                                string rating = !_isHoldMode ? "Wrong Mode!" : "Let Go!";
+                                SpawnFloatingText(rating, new Color(255, 50, 50), note.Velocity * 0.8f, currentJudgeOffsetX);
                             }
 
                             if (note.HoldBodyNode != null)
@@ -545,9 +616,8 @@ namespace CoreGame
                                 note.HoldBodyNode.color = note.HoldBodyNode.color * 0.4f;
                             }
                         }
-                        else // Still successfully holding!
+                        else // Still successfully holding in Stream mode!
                         {
-                            // Hold circle stays inside judgement ring
                             note.CurrentOffset = 0f;
 
                             // Passive score tick every 100ms
@@ -557,11 +627,8 @@ namespace CoreGame
                                 _scoreUI.text = Score.ToString();
                                 note.HoldLastTickTime = currentAudioTimeMs;
                                 
-                                // Play satisfying soft tick sound
                                 OnPlayHoldTick?.Invoke();
-
-                                // Trigger satisfying micro-animation pulse on judgement ring
-                                _judgementRingScale = 1.08f;
+                                _judgementRingScale = 1.08f; // satisfy pulse
                             }
 
                             // Shrink the hold bar from the left
@@ -581,17 +648,16 @@ namespace CoreGame
                         {
                             if (note.IsHold && !note.IsHolding)
                             {
-                                // It is an ignored hold note / drumroll!
-                                // Instead of flinging down under gravity and breaking combo, we let it scroll past smoothly!
+                                // Ignored hold note / drumroll
                                 if (note.CurrentOffset < -currentJudgeOffsetX - 100f)
                                 {
-                                    note.IsProcessed = true; // Finally process it once it's far off-screen
+                                    note.IsProcessed = true;
                                 }
                                 else
                                 {
                                     float timeDiff = (float)note.TargetTimeMs - currentAudioTimeMs;
                                     note.CurrentOffset = (float)(timeDiff * ScrollSpeed * note.VelocityMultiplier * GlobalScale);
-                                    note.VisualNode.alpha = this.alpha * Math.Clamp(1.0f + (note.CurrentOffset / currentJudgeOffsetX), 0f, 1f); // Fade out as it passes left
+                                    note.VisualNode.alpha = this.alpha * Math.Clamp(1.0f + (note.CurrentOffset / currentJudgeOffsetX), 0f, 1f);
                                     
                                     if (note.HoldBodyNode != null)
                                     {
@@ -612,8 +678,8 @@ namespace CoreGame
                                 Combo = 0;
                                 _comboUI.text = $"{Combo}x";
 
-                                note.Velocity = new Vector2(-150f, 600f) * GlobalScale; // Gravity fling down
-                                note.VisualNode.color = new Color(255, 235, 100, 255) * 0.4f;
+                                note.Velocity = new Vector2(-150f, 600f) * GlobalScale;
+                                note.VisualNode.color = note.VisualNode.color * 0.4f;
 
                                 SpawnFloatingText("Miss", new Color(255, 50, 50), note.Velocity * 0.8f, currentJudgeOffsetX);
                             }
@@ -624,7 +690,6 @@ namespace CoreGame
                             note.CurrentOffset = (float)(timeDiff * ScrollSpeed * note.VelocityMultiplier * GlobalScale);
                             note.VisualNode.alpha = this.alpha;
 
-                            // Draw hold track extending to the right of the note
                             if (note.IsHold && note.HoldBodyNode != null)
                             {
                                 float bodyWidth = (float)(note.DurationMs * ScrollSpeed * note.VelocityMultiplier * GlobalScale);
@@ -635,7 +700,7 @@ namespace CoreGame
                         }
                     }
                 }
-                else // Apply physics gravity fling animations
+                else // Physics gravity fling animations
                 {
                     note.Velocity += new Vector2(0f, 1500f * dt * GlobalScale);
                     note.PositionOffset += note.Velocity * dt;
@@ -752,13 +817,14 @@ namespace CoreGame
             });
         }
 
-        // --- Internal Data Structures ---
+        // --- Data Structures ---
         private class HitErrorTick
         {
             public Frame VisualNode { get; set; } = null!;
             public float LocalError { get; set; }
             public float Alpha { get; set; } = 1.0f;
         }
+
         private class TaikoNote
         {
             public double TargetTimeMs { get; set; }

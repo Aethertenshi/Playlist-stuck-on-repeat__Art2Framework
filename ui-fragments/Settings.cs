@@ -1,16 +1,78 @@
 using ArtFrame;
 using ArtFrame.ArtTypes;
 using ArtFrame.Easings;
+using ArtFrame.UIModifier;
 using ArtFrame.UserInterface;
-
 using static ArtFrame.AudioHelper;
-using static ArtFrame.InputHelper;
 using static ArtFrame.GraphicsHelper;
+using static ArtFrame.InputHelper;
 
 namespace CoreGame
 {
     public partial class MainGame : IArt
     {
+        public ScrollingFrame BuildSettingsUI()
+        {
+            ScrollingFrame settingsPanel = new ScrollingFrame
+            {
+                anchorX = AnchorX.Left,
+                anchorY = AnchorY.Top,
+                size = new UDim2(0f, 1f, 510f, -60f), // Match the exact footprint of your song list
+                scrollDirection = Axis.Vertical,
+                showScrollbar = false,
+                smoothing = 18f,
+                clipMode = ClipMode.Clip,
+                alpha = 0f,
+                onUpdate = (e, dt) =>
+                {
+                    // Smoothly interpolate positions from tucked away (-510px) to resting at the left edge (0px)
+                    e.position = UDim2.Lerp(new UDim2(0f, 0, -510f, 60f), new UDim2(0f, 0f, 0f, 60f), MathF.Min(_settingsTweener.CurrentValue, _bgTweener.CurrentValue * (1f - _startTransitionTweener.CurrentValue)));
+
+                    // Pull dynamic color mutations matching your global album art tint machine
+                    //e.color = new Color((byte)(_currentCoverColor.R * 0.85f), (byte)(_currentCoverColor.G * 0.85f), (byte)(_currentCoverColor.B * 0.85f), 100);
+                }
+            };
+
+            string[] options = { "Volumes", "Audio Offset", "Key Bindings", "Graphics Config", "Gameplay Settings" };
+            foreach (var optionName in options)
+            {
+                Frame optionRow = new Frame
+                {
+                    position = new UDim2(0f, 0f, 10f, _settingsYOffset),
+                    size = new UDim2(1f, 0f, 0f, 45f),
+                    anchorX = AnchorX.Left,
+                    anchorY = AnchorY.Top,
+                    onUpdate = (e, dt) =>
+                    {
+                        byte r = (byte)(_currentCoverColor.R * 0.85f);
+                        byte g = (byte)(_currentCoverColor.G * 0.85f);
+                        byte b = (byte)(_currentCoverColor.B * 0.85f);
+
+                        // 3. Apply the colors dynamically
+                        e.color = new Color(r, g, b, 175);
+                    }
+                };
+
+                optionRow.children.Add(new TextFrame
+                {
+                    text = optionName,
+                    fontName = "gsans_bold",
+                    position = new UDim2(0.5f, 0.5f, 0, 0f),
+                    anchorX = AnchorX.Center,
+                    anchorY = AnchorY.Center,
+                    textAnchorX = AnchorX.Center,
+                    textAnchorY = AnchorY.Center,
+                    scale = 1.5f,
+                    color = Color.White
+                });
+
+                settingsPanel.children.Add(optionRow);
+                _settingsYOffset += 50f; // Stack layout down cleanly
+                AddSettingsMenu(settingsPanel, optionName);
+            };
+
+            return settingsPanel;
+        }
         private void AddSettingsMenu(ScrollingFrame settingsPanel, string currentPage = "")
         {
             if (currentPage != "" && currentPage == "Volumes")

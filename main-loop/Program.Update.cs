@@ -1,24 +1,14 @@
-using System;
-using System.IO;
-using System.Linq;
-using System.Collections.Generic;
 using ArtFrame;
 using ArtFrame.ArtTypes;
 using ArtFrame.Easings;
-using ArtFrame.Effects;
-using ArtFrame.RythmModule;
-using ArtFrame.UIModifier;
 using ArtFrame.UserInterface;
 using ArtFrame.FileProcessing;
 using OsuLib;
 using System.Text.Json;
 
 using static ArtFrame.AudioHelper;
-using static ArtFrame.EffectsHelper;
-using static ArtFrame.FontHelper;
 using static ArtFrame.GraphicsHelper;
 using static ArtFrame.InputHelper;
-using static ArtFrame.RythmHelper;
 using static ArtFrame.SpriteHelper;
 using static ArtFrame.TextureHelper;
 using static ArtFrame.TweenHelper;
@@ -48,14 +38,32 @@ namespace CoreGame
                 if (length > 0)
                 {
                     float progress = played / length;
-                    _introAlpha = Math.Clamp(progress * 1.01f, 0f, 1f); // Smooth logo fade-in
+                    _introAlpha = Math.Clamp(progress * 1.05f, 0f, 1f); // Smooth logo fade-in
+
+                    if (_transitionFired)
+                    {
+                        _introTransitionTimer += dt * 1.25f;
+                    }
 
                     // Trigger GridTransitionRadial at 95% completion of welcome.wav
-                    if (progress >= 0.935f && !_transitionFired)
+                    if (progress >= 0.87f && !_transitionFired)
                     {
                         _transitionFired = true;
-                        _welcomeTransition.Play(1.5f, Easing.Cubic, Direction.Out);
-                        _logoRotation.Start(2f, 0f, -3.7f, Easing.Exponential, Direction.Out);
+                        _welcomeTransition.Play(2.7f, Easing.Exponential, Direction.Out);
+                        _logoRotation.Start(2.7f, 0f, -3.8f, Easing.Fluid, Direction.Out); // Smooth elegant rotation alignment
+
+                        // Spawn a single, extremely soft pure white ripple ring (calm ripple effect)
+                        var waveNode = new ImageFrame
+                        {
+                            texture = LoadImage("logo"),
+                            color = Color.White,
+                            anchorX = AnchorX.Center,
+                            anchorY = AnchorY.Center,
+                            fit = ObjectFit.Cover,
+                            alpha = 0.4f
+                        };
+                        _shockwaveHolder.children.Add(waveNode);
+                        _shockwaves.Add(new LogoShockwave { VisualNode = waveNode, Progress = 0f });
 
                         // Play randomly selected beatmap music preview
                         PlayMusic(_currentAudioKey);
@@ -129,15 +137,22 @@ namespace CoreGame
                 }
                 else
                 {
-                    // Scale it much larger so it extends far beyond the logo's boundaries!
-                    float scaleMultiplier = 1f + wave.Progress * 0.125f; // expands to 1.125x scale!
-                    float baseSizeScale = 0.4f * MathF.Max(_logoTweener.CurrentValue, _startTransitionTweener.CurrentValue);
-                    wave.VisualNode.size = new UDim2(baseSizeScale * scaleMultiplier, baseSizeScale * scaleMultiplier);
-                    
-                    // Center inside blurBg (which aligns perfectly with logo center)
-                    wave.VisualNode.position = UDim2.FromScale(0.5f, 0.5f);
-                    wave.VisualNode.rotation = _logoRotation.CurrentValue;
-                    wave.VisualNode.alpha = ((1f - wave.Progress) * 0.45f) * (1f - _peekBg);
+                    if (wave.Progress < 0f)
+                    {
+                        wave.VisualNode.alpha = 0f;
+                    }
+                    else
+                    {
+                        // Scale it much larger so it extends far beyond the logo's boundaries!
+                        float scaleMultiplier = 1f + wave.Progress * 0.35f; // expands to 1.35x scale!
+                        float baseSizeScale = 0.4f * MathF.Max(_logoTweener.CurrentValue, _startTransitionTweener.CurrentValue);
+                        wave.VisualNode.size = new UDim2(baseSizeScale * scaleMultiplier, baseSizeScale * scaleMultiplier);
+                        
+                        // Center inside blurBg (which aligns perfectly with logo center)
+                        wave.VisualNode.position = UDim2.FromScale(0.5f, 0.5f);
+                        wave.VisualNode.rotation = _logoRotation.CurrentValue;
+                        wave.VisualNode.alpha = ((1f - wave.Progress) * 0.65f) * (1f - _peekBg);
+                    }
                 }
             }
 
@@ -183,35 +198,57 @@ namespace CoreGame
 
                 PlaySFX("play-click"); // Optional feedback
                 _isStarting = true;
-                _startPhase = 1;
                 _startTimer = 0f;
 
                 // 1. Force close any open side panels and Listen/Score mode
                 _settingsTweener.Restart(0.5f, 0f, Easing.Exponential, Direction.Out);
                 _modifiersTweener.Restart(0.5f, 0f, Easing.Exponential, Direction.Out);
+                
+                bool hadListenScore = _isListenScoreMode;
                 _isListenScoreMode = false;
-                _listenScoreTweener.Restart(0.4f, 0f, Easing.Exponential, Direction.Out);
+                _listenScoreTweener.Restart(0.5f, 0f, Easing.Exponential, Direction.Out);
 
-                // 2. Trigger Phase 1 (UI Fades out, Cover slides to center, bgDrop darkens)
-                _startTransitionTweener.Restart(1.1f, 1.0f, Easing.Exponential, Direction.Out);
+                if (hadListenScore)
+                {
+                    _startPhase = 0; // Wait 0.5 seconds for centering first
+                }
+                else
+                {
+                    _startPhase = 1;
+                    // Trigger Phase 1 immediately
+                    _startTransitionTweener.Restart(1.1f, 1.0f, Easing.Exponential, Direction.Out);
 
-                // 3. Fade out the music smoothly
-                if (_audioTweeners.ContainsKey(_currentAudioKey))
-                    _audioTweeners[_currentAudioKey].Restart(1.1f, 0f, Easing.Exponential, Direction.Out);
+                    // Fade out the music smoothly
+                    if (_audioTweeners.ContainsKey(_currentAudioKey))
+                        _audioTweeners[_currentAudioKey].Restart(1.1f, 0f, Easing.Exponential, Direction.Out);
+                }
             }
 
             if (_isStarting)
             {
                 _startTimer += dt;
 
+                // Wait 0.5 seconds in Phase 0 (for centering) then trigger Phase 1
+                if (_startPhase == 0 && _startTimer >= 0.5f)
+                {
+                    _startPhase = 1;
+                    _startTimer = 0f; // Reset timer so Phase 1 starts at 0
+
+                    // Trigger Phase 1 (UI Fades out, Cover slides to center, bgDrop darkens)
+                    _startTransitionTweener.Restart(1.6f, 1.0f, Easing.Fluid, Direction.InOut);
+
+                    // Fade out the music smoothly
+                    if (_audioTweeners.ContainsKey(_currentAudioKey))
+                        _audioTweeners[_currentAudioKey].Restart(1.5f, 0f, Easing.Fluid, Direction.Out);
+                }
                 // Wait 1.5 seconds, then trigger Phase 2 (The Shrink)
-                if (_startPhase == 1 && _startTimer >= 1.5f)
+                else if (_startPhase == 1 && _startTimer >= 1.3f)
                 {
                     _startPhase = 2;
-                    _startShrinkTweener.Restart(.85f, 1.0f, Easing.Exponential, Direction.In);
+                    _startShrinkTweener.Restart(2.1f, 1.0f, Easing.Fluid, Direction.InOut);
                 }
                 // Wait another 1.5 seconds, then load the game
-                else if (_startPhase == 2 && _startTimer >= 3.0f)
+                else if (_startPhase == 2 && _startTimer >= 3.5f)
                 {
                     _startPhase = 3;
 
@@ -221,7 +258,7 @@ namespace CoreGame
                     if (_audioTweeners.ContainsKey(_currentAudioKey))
                     {
                         StopMusic(_currentAudioKey);
-                        _audioTweeners[_currentAudioKey].Restart(0.5f, _targetVolume, Easing.Exponential, Direction.Out);
+                        _audioTweeners[_currentAudioKey].Restart(0.5f, _targetVolume, Easing.Fluid, Direction.Out);
                         SeekMusic(_currentAudioKey, 0f);
                         PlayMusic(_currentAudioKey);
                     }
@@ -301,7 +338,7 @@ namespace CoreGame
                     string? extractedFolder = OszImporter.Import(path, SongsPath);
                     if (extractedFolder != null && Directory.Exists(extractedFolder))
                     {
-                        var osuFiles = Directory.GetFiles(extractedFolder, "*.osu", SearchOption.AllDirectories);
+                        var osuFiles = _scanner.FindOsuFiles(extractedFolder).ToArray();
                         if (osuFiles.Length == 0)
                         {
                             Console.WriteLine($"[MainGame] No .osu files found in extracted .osz folder: {extractedFolder}");

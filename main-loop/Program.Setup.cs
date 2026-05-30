@@ -205,7 +205,7 @@ namespace CoreGame
                         _bgTweener.CurrentValue
                     );
 
-                    // 2. Lerp to black when starting
+                    // 2. Lerp to a solid black background when starting
                     e.color = Color.LerpColor(menuColor, Color.Black, _startTransitionTweener.CurrentValue);
                 }
             };
@@ -235,10 +235,13 @@ namespace CoreGame
                         float targetX = ArtMathHelper.Lerp(currentTargetX, currentTargetX - 0.08f, effectiveListenScore);
                         float targetY = ArtMathHelper.Lerp(0.5f, 0.32f, effectiveListenScore);
 
-                        e.position = UDim2.Lerp(UDim2.FromScale(0.5f, 0.5f), UDim2.FromScale(targetX, targetY), _bgTweener.CurrentValue);
+                        float t_shrink = _startShrinkTweener.CurrentValue;
+                        float finalY = ArtMathHelper.Lerp(targetY, -0.6f, t_shrink);
+
+                        e.position = UDim2.Lerp(UDim2.FromScale(0.5f, 0.5f), UDim2.FromScale(targetX, finalY), _bgTweener.CurrentValue);
+                        e.alpha = 1f - t_shrink;
 
                         _blur.BlurAmount = ArtMathHelper.Lerp(0f, 3.7f, 1f - MathF.Max(_bgTweener.CurrentValue, _peekBg));
-                        e.alpha = 1f - _startShrinkTweener.CurrentValue;
                         e.BypassEffect = _bgTweener.CurrentValue >= 0.99f;
                     }
                 }
@@ -254,16 +257,9 @@ namespace CoreGame
                 position = new UDim2(0f, 0f), // Locked to the top-left of the parent
                 onUpdate = (e, dt) =>
                 {
-                    // 1. Smoothly interpolate Size
-                    //e.size = UDim2.Lerp(UDim2.FromScale(1f, 1f), UDim2.FromOffset(500f, 500f), _bgTweener.CurrentValue);
-
-                    // 2. Smoothly interpolate Position (Center -> 1/3 Left)
-                    //UDim2 fullScreenPos = UDim2.FromScale(0.5f, 0.5f);
-                    //UDim2 coverPos = UDim2.FromScale(0.38f, 0.5f);
-                    //e.position = UDim2.Lerp(fullScreenPos, coverPos, _bgTweener.CurrentValue);
-
                     // 3. Smoothly interpolate Color (Dark gray -> Dynamic Cover Color)
                     e.color = Color.LerpColor(new Color(200, 200, 200), Color.White, _bgTweener.CurrentValue);
+
                     e.alpha = 1f - _startShrinkTweener.CurrentValue;
 
                     // Input Polling
@@ -328,9 +324,24 @@ namespace CoreGame
                     if (_inIntro)
                     {
                         e.alpha = _introAlpha;
-                        e.size = new UDim2(0.4f, 0.4f);
-                        e.position = UDim2.FromScale(0.5f, 0.5f);
                         e.rotation = _logoRotation.CurrentValue;
+
+                        if (_transitionFired)
+                        {
+                            // 1. Smooth Breath Swell: gently swells slightly larger (from 0.40f to 0.42f) and floats back smoothly
+                            float swell = 0.025f * MathF.Exp(-_introTransitionTimer * 3.5f) * MathF.Sin(_introTransitionTimer * MathF.PI);
+                            float sizeVal = 0.4f + swell;
+                            e.size = new UDim2(sizeVal, sizeVal);
+                        }
+                        else
+                        {
+                            // 2. Liquid Smooth Scale Swell: gently scales up as it fades in on startup
+                            float sizeVal = ArtMathHelper.Lerp(0.35f, 0.40f, _introAlpha);
+                            e.size = new UDim2(sizeVal, sizeVal);
+                        }
+
+                        e.position = UDim2.FromScale(0.5f, 0.5f);
+                        e.color = Color.White;
                     }
                     else
                     {
@@ -350,10 +361,11 @@ namespace CoreGame
                         float targetX = ArtMathHelper.Lerp(currentTargetX, currentTargetX - 0.08f, effectiveListenScore);
                         float targetY = ArtMathHelper.Lerp(0.5f, 0.32f, effectiveListenScore);
 
-                        e.alpha = (1f - _startShrinkTweener.CurrentValue) * (1f - _peekBg);
+                        float t_shrink = _startShrinkTweener.CurrentValue;
+                        float finalY = ArtMathHelper.Lerp(targetY, -0.6f, t_shrink);
 
-                        // The position retains its exact original behavior but tracks on the corrected curve
-                        e.position = UDim2.Lerp(UDim2.FromScale(0.5f, 0.5f), UDim2.FromScale(targetX, targetY), _bgTweener.CurrentValue);
+                        e.alpha = (1f - t_shrink) * (1f - _peekBg) * _introAlpha;
+                        e.position = UDim2.Lerp(UDim2.FromScale(0.5f, 0.5f), UDim2.FromScale(targetX, finalY), _bgTweener.CurrentValue);
                     }
                 }
             };
@@ -494,11 +506,21 @@ namespace CoreGame
 
                     UDim2 fullScreenPos = new UDim2(0.38f, 0.5f, -250f, 320f);
                     UDim2 coverViewPos  = new UDim2(scaleX, scaleY, offsetX, offsetY);
-                    e.position = UDim2.Lerp(fullScreenPos, coverViewPos, _bgTweener.CurrentValue);
+                    UDim2 normalPos = UDim2.Lerp(fullScreenPos, coverViewPos, _bgTweener.CurrentValue);
 
+                    float t_shrink = _startShrinkTweener.CurrentValue;
+
+                    // Interpolate position smoothly to top-left area (ScaleX = 0f, ScaleY = 0.22f, OffsetX = 100f * GlobalScale) in Phase 2
+                    UDim2 gameplayPos = new UDim2(0f, 0.22f, 100f * _settings.GlobalScale, 0f);
+                    e.position = UDim2.Lerp(normalPos, gameplayPos, t_shrink);
+
+                    // Interpolate scale from 2.4f (normal) to 2.7f (slightly enlarged) in Phase 2
+                    e.scale = ArtMathHelper.Lerp(2.4f, 2.7f, t_shrink);
+
+                    // Title remains visible during gameplay
                     e.alpha = _bgTweener.CurrentValue
                             * (1f - _settingsTweener.CurrentValue * 0.4f)
-                            * (1f - _startShrinkTweener.CurrentValue);
+                            * (1f - _startShrinkTweener.CurrentValue * 0.3f);
                 }
             };
 
@@ -533,11 +555,21 @@ namespace CoreGame
 
                     UDim2 fullScreenPos = new UDim2(0.38f, 0.5f, -250f, 350f);
                     UDim2 coverViewPos  = new UDim2(scaleX, scaleY, offsetX, offsetY);
-                    e.position = UDim2.Lerp(fullScreenPos, coverViewPos, _bgTweener.CurrentValue);
+                    UDim2 normalPos = UDim2.Lerp(fullScreenPos, coverViewPos, _bgTweener.CurrentValue);
 
+                    float t_shrink = _startShrinkTweener.CurrentValue;
+
+                    // Interpolate position smoothly to sit right below the title in the top-left area in Phase 2
+                    UDim2 gameplayPos = new UDim2(0f, 0.22f, 100f * _settings.GlobalScale, 55f * _settings.GlobalScale);
+                    e.position = UDim2.Lerp(normalPos, gameplayPos, t_shrink);
+
+                    // Interpolate scale from 1.8f (normal) to 1.95f (slightly enlarged) in Phase 2
+                    e.scale = ArtMathHelper.Lerp(1.8f, 1.95f, t_shrink);
+
+                    // Artist remains visible during gameplay
                     e.alpha = _bgTweener.CurrentValue
                             * (1f - _settingsTweener.CurrentValue * 0.4f)
-                            * (1f - _startShrinkTweener.CurrentValue);
+                            * (1f - _startShrinkTweener.CurrentValue * 0.3f);
                 }
             };
 
@@ -549,8 +581,6 @@ namespace CoreGame
                 color = new Color(80, 80, 80),
                 onUpdate = (e, dt) =>
                 {
-                    e.alpha = _bgTweener.CurrentValue * (1f - _startTransitionTweener.CurrentValue);
-
                     float activePanelValue = MathF.Max(_settingsTweener.CurrentValue, _modifiersTweener.CurrentValue);
                     float baseTargetX = ArtMathHelper.Lerp(0.38f, 0.42f, activePanelValue);
                     float currentTargetX = ArtMathHelper.Lerp(baseTargetX, 0.5f, _startTransitionTweener.CurrentValue);
@@ -569,10 +599,24 @@ namespace CoreGame
 
                     UDim2 fullScreenPos = new UDim2(0.38f, 0.5f, 0f, 410f);
                     UDim2 coverViewPos  = new UDim2(scaleX, scaleY, offsetX, offsetY);
-                    e.position = UDim2.Lerp(fullScreenPos, coverViewPos, _bgTweener.CurrentValue);
+                    UDim2 normalPos = UDim2.Lerp(fullScreenPos, coverViewPos, _bgTweener.CurrentValue);
 
                     float trackWidth = ArtMathHelper.Lerp(500f * _bgTweener.CurrentValue, 410f * _bgTweener.CurrentValue, effectiveListenScore);
-                    e.size = new UDim2(0f, 0f, trackWidth, 6f);
+
+                    float t_shrink = _startShrinkTweener.CurrentValue;
+
+                    // Position: Smoothly center during Phase 1 (via normalPos), then slide up to vertical center in Phase 2
+                    e.position = UDim2.Lerp(normalPos, new UDim2(0.5f, 0.5f, 0f, 0f), t_shrink);
+
+                    // Size: Keep normal menu size during Phase 1, then expand to full screen width in Phase 2
+                    float targetWidth = 1920f;
+                    float targetHeight = 4f * _settings.GlobalScale;
+                    float w = ArtMathHelper.Lerp(trackWidth, targetWidth, t_shrink);
+                    float h = ArtMathHelper.Lerp(6f, targetHeight, t_shrink);
+                    e.size = new UDim2(0f, 0f, w, h);
+
+                    // Smooth bidirectional fade using playfield alpha and t_shrink
+                    e.alpha = _bgTweener.CurrentValue * MathF.Max(0f, 1f - _taikofield.alpha * t_shrink);
                 }
             };
 
@@ -586,13 +630,14 @@ namespace CoreGame
                 color = Color.White,
                 onUpdate = (e, dt) =>
                 {
-                    e.alpha = _bgTweener.CurrentValue * (1f - _startTransitionTweener.CurrentValue);
-
                     float timePlayed = GetMusicTimePlayed(_currentAudioKey);
                     float totalLength = GetMusicLength(_currentAudioKey);
                     float progress = totalLength > 0 ? timePlayed / totalLength : 0f;
 
                     e.size = new UDim2(Math.Clamp(progress, 0f, 1f), 1f, 0f, 0f);
+
+                    float t_shrink = _startShrinkTweener.CurrentValue;
+                    e.alpha = _bgTweener.CurrentValue * MathF.Max(0f, 1f - _taikofield.alpha * t_shrink) * (1f - t_shrink);
                 }
             };
             progressBarTrack.children.Add(progressBarFill);
@@ -607,21 +652,23 @@ namespace CoreGame
                 color = Color.White,
                 onUpdate = (e, dt) =>
                 {
-                    // Match the general panel fade animation
-                    e.alpha = _bgTweener.CurrentValue * (1f - _startTransitionTweener.CurrentValue);
-
                     // 1. Calculate the active progress ratio
                     float timePlayed = GetMusicTimePlayed(_currentAudioKey);
                     float totalLength = GetMusicLength(_currentAudioKey);
                     float progress = totalLength > 0 ? Math.Clamp(timePlayed / totalLength, 0f, 1f) : 0f;
 
-                    // 2. Position the dot relative to the track's width
-                    // Since it's a child of progressBarTrack, Scale X goes from 0.0 (left) to 1.0 (right).
-                    // Center it vertically on the track by setting Scale Y to 0.5f (50%).
-                    e.position = new UDim2(progress, 0.5f, 0.5f, 0f);
+                    UDim2 normalPos = new UDim2(progress, 0.5f, 0.5f, 0f);
+                    float t_shrink = _startShrinkTweener.CurrentValue;
 
-                    // 3. Size the dot (14x14 pixels works perfectly for a clean look)
-                    e.size = new UDim2(0f, 0f, 20f, 20f);
+                    UDim2 targetPos = new UDim2(0f, 0.5f, 300f * _settings.GlobalScale, 0f);
+                    e.position = UDim2.Lerp(normalPos, targetPos, t_shrink);
+
+                    float normalSize = 20f;
+                    float targetSize = 40f * _settings.GlobalScale;
+                    float currentSize = ArtMathHelper.Lerp(normalSize, targetSize, t_shrink);
+                    e.size = new UDim2(0f, 0f, currentSize, currentSize);
+
+                    e.alpha = _bgTweener.CurrentValue * MathF.Max(0f, 1f - _taikofield.alpha * t_shrink);
                 }
             };
             progressBarTrack.children.Add(progressBarDot);
@@ -638,7 +685,6 @@ namespace CoreGame
                 onUpdate = (e, dt) =>
                 {
                     e.color = new Color((byte)(_currentCoverColor.R * 0.4f), (byte)(_currentCoverColor.G * 0.4f), (byte)(_currentCoverColor.B * 0.4f));
-                    e.alpha = _bgTweener.CurrentValue * (1f - _startTransitionTweener.CurrentValue);
 
                     float activePanelValue = MathF.Max(_settingsTweener.CurrentValue, _modifiersTweener.CurrentValue);
                     float baseTargetX = ArtMathHelper.Lerp(0.38f, 0.42f, activePanelValue);
@@ -657,7 +703,11 @@ namespace CoreGame
 
                     UDim2 fullScreenPos = new UDim2(0.38f, 0.5f, -250f, 425f);
                     UDim2 coverViewPos  = new UDim2(scaleX, scaleY, offsetX, offsetY);
-                    e.position = UDim2.Lerp(fullScreenPos, coverViewPos, _bgTweener.CurrentValue);
+                    UDim2 normalPos = UDim2.Lerp(fullScreenPos, coverViewPos, _bgTweener.CurrentValue);
+
+                    float t_shrink = _startShrinkTweener.CurrentValue;
+                    e.position = UDim2.Lerp(normalPos, new UDim2(normalPos.ScaleX, normalPos.ScaleY, normalPos.OffsetX, normalPos.OffsetY - 600f), t_shrink);
+                    e.alpha = _bgTweener.CurrentValue * (1f - t_shrink);
 
                     float time = GetMusicTimePlayed(_currentAudioKey);
                     e.text = $"{(int)(time / 60)}:{(int)(time % 60):D2}";
@@ -676,7 +726,6 @@ namespace CoreGame
                 onUpdate = (e, dt) =>
                 {
                     e.color = new Color((byte)(_currentCoverColor.R * 0.4f), (byte)(_currentCoverColor.G * 0.4f), (byte)(_currentCoverColor.B * 0.4f));
-                    e.alpha = _bgTweener.CurrentValue * (1f - _startTransitionTweener.CurrentValue);
 
                     float activePanelValue = MathF.Max(_settingsTweener.CurrentValue, _modifiersTweener.CurrentValue);
                     float baseTargetX = ArtMathHelper.Lerp(0.38f, 0.42f, activePanelValue);
@@ -695,7 +744,11 @@ namespace CoreGame
 
                     UDim2 fullScreenPos = new UDim2(0.38f, 0.5f, 250f, 425f);
                     UDim2 coverViewPos  = new UDim2(scaleX, scaleY, offsetX, offsetY);
-                    e.position = UDim2.Lerp(fullScreenPos, coverViewPos, _bgTweener.CurrentValue);
+                    UDim2 normalPos = UDim2.Lerp(fullScreenPos, coverViewPos, _bgTweener.CurrentValue);
+
+                    float t_shrink = _startShrinkTweener.CurrentValue;
+                    e.position = UDim2.Lerp(normalPos, new UDim2(normalPos.ScaleX, normalPos.ScaleY, normalPos.OffsetX, normalPos.OffsetY - 600f), t_shrink);
+                    e.alpha = _bgTweener.CurrentValue * (1f - t_shrink);
 
                     float timePlayed = GetMusicTimePlayed(_currentAudioKey);
                     float totalLength = GetMusicLength(_currentAudioKey);
@@ -703,177 +756,6 @@ namespace CoreGame
                     e.text = $"-{(int)(left / 60)}:{(int)(left % 60):D2}";
                 }
             };
-
-            // === TopBar ===
-            Frame topBar = new Frame
-            {
-                anchorX = AnchorX.Left,
-                anchorY = AnchorY.Top,
-                size = new UDim2(1f, 0f, 0f, 60f),
-                modifiers = new List<IFrameModifier>
-                {
-                    new ListLayout{ direction = Axis.Horizontal, horizontalAlign = HAlign.Left, verticalAlign = VAlign.Center, spacing = 15f, controlCrossAxis = true }
-                },
-                onUpdate = (e, dt) =>
-                {
-                    e.color = new Color((byte)(_currentCoverColor.R * 0.85f), (byte)(_currentCoverColor.G * 0.85f), (byte)(_currentCoverColor.B * 0.85f), 100);
-                    e.alpha = _bgTweener.CurrentValue * (1f - _startTransitionTweener.CurrentValue);
-                    e.position = UDim2.Lerp(new UDim2(0f, 0f, 0f, -60f), new UDim2(0f, 0f, 0f, 0f), _bgTweener.CurrentValue * (1f - _startTransitionTweener.CurrentValue));
-                }
-            };
-
-            // 1. Local variables to track the current scale of each button
-            float backHoverScale = 1f;
-            float settingsHoverScale = 1f;
-            float modifiersHoverScale = 1f;
-
-            // 2. The Account Button
-            Button accountBtn = new Button
-            {
-                size = new UDim2(0f, 1f, 120f, 0f),
-                onHoverEnter = (btn) =>
-                {
-                    PlaySFX("hover");
-                },
-                onUpdate = (btn) =>
-                {
-                    // The same lerp logic from your song list
-                    float targetScale = btn.IsHovered ? 1.32f : 1f;
-                    backHoverScale = ArtMathHelper.Lerp(backHoverScale, targetScale, 0.05f);
-
-                    // Scale the width (Offset X)
-                    btn.size = new UDim2(0f, 1f, 120f * backHoverScale, 0f);
-
-                    byte r = (byte)(_currentCoverColor.R * 0.85f);
-                    byte g = (byte)(_currentCoverColor.G * 0.85f);
-                    byte b = (byte)(_currentCoverColor.B * 0.85f);
-
-                    // 3. Apply the colors dynamically
-                    btn.color = new Color(r, g, b, 175);
-                    btn.hoverColor = new Color(r, g, b, 235);
-                    btn.pressedColor = new Color(r, g, b, 255);
-                }
-            };
-
-            accountBtn.children.Add(new TextFrame
-            {
-                text = "Account",
-                fontName = "gsans_bold",
-                position = new UDim2(0.5f, 0.5f),
-                anchorX = AnchorX.Center,
-                anchorY = AnchorY.Center,
-                textAnchorX = AnchorX.Center,
-                textAnchorY = AnchorY.Center,
-                scale = 1.5f,
-                color = Color.White
-            });
-            topBar.children.Add(accountBtn);
-
-            // 3. The Settings Button
-            Button settingsBtn = new Button
-            {
-                size = new UDim2(0f, 1f, 120f, 0f),
-                onHoverEnter = (btn) =>
-                {
-                    PlaySFX("hover");
-                },
-                onClick = (btn) =>
-                {
-                    PlaySFX("select");
-                    _isSettingsOpen = !_isSettingsOpen;
-
-                    // Hide Modifiers panel if it's open
-                    if (_isSettingsOpen && _isModifiersOpen)
-                    {
-                        _isModifiersOpen = false;
-                        _modifiersTweener.Restart(0.9f, 0f, Easing.Fluid, Direction.Out);
-                    }
-
-                    _settingsTweener.Restart(duration: 0.9f, targetValue: _isSettingsOpen ? 1.0f : 0f, Easing.Fluid, Direction.Out);
-                },
-                onUpdate = (btn) =>
-                {
-                    float targetScale = btn.IsHovered ? 1.32f : 1f;
-                    settingsHoverScale = ArtMathHelper.Lerp(settingsHoverScale, targetScale, 0.05f);
-                    btn.size = new UDim2(0f, 1f, 120f * settingsHoverScale, 0f);
-
-                    byte r = (byte)(_currentCoverColor.R * 0.85f);
-                    byte g = (byte)(_currentCoverColor.G * 0.85f);
-                    byte b = (byte)(_currentCoverColor.B * 0.85f);
-
-                    // 3. Apply the colors dynamically
-                    btn.color = new Color(r, g, b, 175);
-                    btn.hoverColor = new Color(r, g, b, 235);
-                    btn.pressedColor = new Color(r, g, b, 255);
-                }
-            };
-
-            settingsBtn.children.Add(new TextFrame
-            {
-                text = "Settings",
-                fontName = "gsans",
-                position = new UDim2(0.5f, 0.5f),
-                anchorX = AnchorX.Center,
-                anchorY = AnchorY.Center,
-                textAnchorX = AnchorX.Center,
-                textAnchorY = AnchorY.Center,
-                scale = 1.5f,
-                color = Color.White
-            });
-            topBar.children.Add(settingsBtn);
-
-            // 4. The Modifiers Button
-            Button modifiersBtn = new Button
-            {
-                size = new UDim2(0f, 1f, 120f, 0f),
-                onHoverEnter = (btn) =>
-                {
-                    PlaySFX("hover");
-                },
-                onUpdate = (btn) =>
-                {
-                    float targetScale = btn.IsHovered ? 1.32f : 1f;
-                    modifiersHoverScale = ArtMathHelper.Lerp(modifiersHoverScale, targetScale, 0.05f);
-                    btn.size = new UDim2(0f, 1f, 120f * modifiersHoverScale, 0f);
-
-                    byte r = (byte)(_currentCoverColor.R * 0.85f);
-                    byte g = (byte)(_currentCoverColor.G * 0.85f);
-                    byte b = (byte)(_currentCoverColor.B * 0.85f);
-
-                    // 3. Apply the colors dynamically
-                    btn.color = new Color(r, g, b, 175);
-                    btn.hoverColor = new Color(r, g, b, 235);
-                    btn.pressedColor = new Color(r, g, b, 255);
-                },
-                onClick = (btn) =>
-                {
-                    PlaySFX("select");
-                    _isModifiersOpen = !_isModifiersOpen;
-
-                    // Hide Settings panel if it's open
-                    if (_isModifiersOpen && _isSettingsOpen)
-                    {
-                        _isSettingsOpen = false;
-                        _settingsTweener.Restart(0.9f, 0f, Easing.Fluid, Direction.Out);
-                    }
-
-                    _modifiersTweener.Restart(duration: 0.9f, targetValue: _isModifiersOpen ? 1.0f : 0f, Easing.Fluid, Direction.Out);
-                },
-            };
-
-            modifiersBtn.children.Add(new TextFrame
-            {
-                text = "Modifiers",
-                fontName = "gsans_bold",
-                position = new UDim2(0.5f, 0.5f),
-                anchorX = AnchorX.Center,
-                anchorY = AnchorY.Center,
-                textAnchorX = AnchorX.Center,
-                textAnchorY = AnchorY.Center,
-                scale = 1.5f,
-                color = Color.White
-            });
-            topBar.children.Add(modifiersBtn);
 
             // === Playlist Scroll ===
             ScrollingFrame playlistScroll = new ScrollingFrame
@@ -897,173 +779,12 @@ namespace CoreGame
             _playlistScroll = playlistScroll;
             _starRating = GetRealStarRating(_beatmap);
 
-            // === Modifiers Panel ===
-            ScrollingFrame modifiersPanel = new ScrollingFrame
-            {
-                anchorX = AnchorX.Left,
-                anchorY = AnchorY.Top,
-                size = new UDim2(0f, 1f, 480f, -60f),
-                scrollDirection = Axis.Vertical,
-                showScrollbar = false,
-                smoothing = 18f,
-                clipMode = ClipMode.None,
-                alpha = 0f,
-                onUpdate = (e, dt) =>
-                {
-                    // Smoothly interpolate positions
-                    e.position = UDim2.Lerp(new UDim2(0f, 0, -480f, 60f), new UDim2(0f, 0f, 0f, 60f), MathF.Min(_modifiersTweener.CurrentValue, _bgTweener.CurrentValue * (1f - _startTransitionTweener.CurrentValue)));
-                    e.alpha = _modifiersTweener.CurrentValue;
-                    e.color = new Color((byte)(_currentCoverColor.R * 0.85f), (byte)(_currentCoverColor.G * 0.85f), (byte)(_currentCoverColor.B * 0.85f), 100);
-                }
-            };
-
-            // 0. Header
-            Frame modifiersTitle = new Frame
-            {
-                position = new UDim2(0f, 0f, 0f, _modifiersYOffset),
-                size = new UDim2(1f, 0f, 0f, 45f),
-                anchorX = AnchorX.Left,
-                anchorY = AnchorY.Top,
-                onUpdate = (e, dt) =>
-                {
-                    byte r = (byte)(_currentCoverColor.R * 0.85f);
-                    byte g = (byte)(_currentCoverColor.G * 0.85f);
-                    byte b = (byte)(_currentCoverColor.B * 0.85f);
-
-                    // 3. Apply the colors dynamically
-                    e.color = new Color(r, g, b, 175);
-                }
-            };
-            modifiersTitle.children.Add(new TextFrame
-            {
-                text = "Modifiers",
-                fontName = "gsans_bold",
-                position = new UDim2(0.5f, 0.5f, 0, 0f),
-                anchorX = AnchorX.Center,
-                anchorY = AnchorY.Center,
-                textAnchorX = AnchorX.Center,
-                textAnchorY = AnchorY.Center,
-                scale = 1.8f,
-                color = Color.White
-            });
-            modifiersPanel.children.Add(modifiersTitle);
-            _modifiersYOffset += 50f;
-
-            // 1. Double Time (Speed) Slider
-            SliderFrame sliderSpeed = new SliderFrame
-            {
-                fontName = "gsans_bold",
-                title = "Speed Multiplier",
-                valueFormat = "0.00x",
-                fontScale = 1.35f,
-                position = new UDim2(0.5f, 0f, 0f, _modifiersYOffset),
-                size = new UDim2(.9f, 0f, 0f, 75f),
-                fillColor = new Color(230, 230, 230),
-                resetBtnColor = new Color(230, 230, 230),
-                resetBtnHoverColor = Color.White,
-                handleColor = Color.White,
-                handleWidth = 15f,
-                anchorX = AnchorX.Center,
-                anchorY = AnchorY.Top,
-                minValue = 0.5f,
-                maxValue = 2.0f,
-                defaultValue = 1.0f,
-                currentValue = _speedMultiplier,
-                onUpdate = (e, dt) =>
-                {
-                    byte r = (byte)(_currentCoverColor.R * 0.85f);
-                    byte g = (byte)(_currentCoverColor.G * 0.85f);
-                    byte b = (byte)(_currentCoverColor.B * 0.85f);
-                    e.trackColor = new Color(r, g, b, 175);
-                    e.resetBtnColor = new Color(r, g, b, 255);
-                },
-                onSlide = (e) =>
-                {
-                    _speedMultiplier = e.currentValue;
-                },
-                onValueChanges = (e) =>
-                {
-                    _speedMultiplier = e.currentValue;
-                },
-            };
-            modifiersPanel.children.Add(sliderSpeed);
-            _modifiersYOffset += 80f;
-
-            // 2. Adjust Pitch Toggle
-            modifiersPanel.children.Add(CreateModToggle("Adjust Pitch", _modifiersYOffset, () => _adjustPitch, (val) => { _adjustPitch = val; SetMusicSpeed(_currentAudioKey, _actualMusicSpeed, _adjustPitch); }));
-            _modifiersYOffset += 60f;
-
-            // 3. Hidden Toggle
-            modifiersPanel.children.Add(CreateModToggle("Hidden", _modifiersYOffset, () => _modHidden, (val) => { _modHidden = val; SetMusicSpeed(_currentAudioKey, _actualMusicSpeed, _adjustPitch); }));
-            _modifiersYOffset += 60f;
-
-            // --- Settings Panel ---
-            ScrollingFrame settingsPanel = new ScrollingFrame
-            {
-                anchorX = AnchorX.Left,
-                anchorY = AnchorY.Top,
-                size = new UDim2(0f, 1f, 480f, -60f), // Match the exact footprint of your song list
-                scrollDirection = Axis.Vertical,
-                showScrollbar = false,
-                smoothing = 18f,
-                clipMode = ClipMode.Clip,
-                alpha = 0f,
-                onUpdate = (e, dt) =>
-                {
-                    // Smoothly interpolate positions from tucked away (-510px) to resting at the left edge (0px)
-                    e.position = UDim2.Lerp(new UDim2(0f, 0, -480f, 60f), new UDim2(0f, 0f, 0f, 60f), MathF.Min(_settingsTweener.CurrentValue, _bgTweener.CurrentValue * (1f - _startTransitionTweener.CurrentValue)));
-
-                    // Pull dynamic color mutations matching your global album art tint machine
-                    //e.color = new Color((byte)(_currentCoverColor.R * 0.85f), (byte)(_currentCoverColor.G * 0.85f), (byte)(_currentCoverColor.B * 0.85f), 100);
-                }
-            };
-
-            // --- Dummy Prototype Settings Rows ---
-            string[] options = { "Volumes", "Audio Offset", "Key Bindings", "Graphics Config", "Gameplay Settings" };
-            foreach (var optionName in options)
-            {
-                Frame optionRow = new Frame
-                {
-                    position = new UDim2(0f, 0f, 10f, _settingsYOffset),
-                    size = new UDim2(1f, 0f, 0f, 45f),
-                    anchorX = AnchorX.Left,
-                    anchorY = AnchorY.Top,
-                    onUpdate = (e, dt) =>
-                    {
-                        byte r = (byte)(_currentCoverColor.R * 0.85f);
-                        byte g = (byte)(_currentCoverColor.G * 0.85f);
-                        byte b = (byte)(_currentCoverColor.B * 0.85f);
-
-                        // 3. Apply the colors dynamically
-                        e.color = new Color(r, g, b, 175);
-                    }
-                };
-
-                optionRow.children.Add(new TextFrame
-                {
-                    text = optionName,
-                    fontName = "gsans_bold",
-                    position = new UDim2(0.5f, 0.5f, 0, 0f),
-                    anchorX = AnchorX.Center,
-                    anchorY = AnchorY.Center,
-                    textAnchorX = AnchorX.Center,
-                    textAnchorY = AnchorY.Center,
-                    scale = 1.5f,
-                    color = Color.White
-                });
-
-                settingsPanel.children.Add(optionRow);
-                _settingsYOffset += 50f; // Stack layout down cleanly
-                AddSettingsMenu(settingsPanel, optionName);
-            };
-
             // --- Drawing Index ---
             Add(bgDrop);
 
             Add(songTitle);
             Add(songArtist);
             Add(playlistScroll);
-            Add(topBar);
             Add(timeRemaining);
             Add(timePlayed);
             Add(progressBarTrack);
@@ -1074,42 +795,12 @@ namespace CoreGame
 
             Add(_logoUI);
 
-            // === Scoreboard Panel ===
-            _scoreboardPanel = new Frame
-            {
-                anchorX = AnchorX.Center,
-                anchorY = AnchorY.Center,
-                size = new UDim2(0f, 0f, 450f, 360f),
-                onUpdate = (e, dt) =>
-                {
-                    float activePanelValue = MathF.Max(_settingsTweener.CurrentValue, _modifiersTweener.CurrentValue);
-                    float coverState = _bgTweener.CurrentValue * (1f - activePanelValue) * (1f - _startTransitionTweener.CurrentValue);
-                    float effectiveListenScore = _listenScoreTweener.CurrentValue * (1f - activePanelValue);
-
-                    // X coordinate is always centered relative to current cover/info center
-                    float baseTargetX = ArtMathHelper.Lerp(ArtMathHelper.Lerp(0.38f, 0.42f, activePanelValue), 0.5f, _startTransitionTweener.CurrentValue);
-                    float x = baseTargetX;
-                    
-                    // Y axis only: slides up from offscreen bottom (1.3f) to its position (0.70f)
-                    float y = ArtMathHelper.Lerp(1.3f, 0.70f, effectiveListenScore * coverState);
-
-                    e.position = new UDim2(x, y, 0f, 20f);
-
-                    byte r = (byte)(_currentCoverColor.R * 0.12f);
-                    byte g = (byte)(_currentCoverColor.G * 0.12f);
-                    byte b = (byte)(_currentCoverColor.B * 0.12f);
-
-                    // Only shown when effectiveListenScore is active
-                    float totalState = effectiveListenScore * coverState;
-                    e.color = new Color(r, g, b, (byte)(160 * totalState));
-                    e.alpha = totalState;
-                }
-            };
-            Add(_scoreboardPanel);
+            Add(BuildTopbarUI());
+            Add(BuildScoreboardUI());
             RefreshScoreboard();
 
-            Add(settingsPanel);
-            Add(modifiersPanel);
+            Add(BuildSettingsUI());
+            Add(BuildModifiersUI());
             Add(_taikofield);
 
             // Populate Playlist

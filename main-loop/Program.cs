@@ -87,6 +87,7 @@ namespace CoreGame
         private bool _isListenScoreMode = false;
         private float _startTimer = 0f;
         private int _startPhase = 0;
+        private float _transitionDuration = 2f; // Customize transition speed here (seconds)
         private float _peekBg = 0f;
 
         // ─── Tweener Transition Pools ────────────────────────────────────────
@@ -102,6 +103,7 @@ namespace CoreGame
         // ─── Intro Screen Welcome Lifecycle ──────────────────────────────────
         private bool _inIntro = true;
         private float _introAlpha = 0f;
+        private float _introTransitionTimer = 0f;
        
         private bool _transitionFired = false;
         private GridTransitionRadial _welcomeTransition = null!;
