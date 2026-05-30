@@ -31,11 +31,9 @@ Playlist Stuck on Repeat is designed to feel incredibly snappy, responsive, and 
 See the premium interface, fluid visual design, and real-time gameplay trackers in action:
 
 <p align="center">
-  <img src="media/Screenshot%202026-05-28%20084122.png" width="48%" alt="Gameplay Interface" />
   <img src="media/Screenshot%202026-05-28%20095025.png" width="48%" alt="Song Selection" />
 </p>
 <p align="center">
-  <img src="media/Screenshot%202026-05-28%20231832.png" width="48%" alt="Settings Panel" />
   <img src="media/Screenshot%202026-05-29%20212619.png" width="48%" alt="Warning screen" />
 </p>
 
