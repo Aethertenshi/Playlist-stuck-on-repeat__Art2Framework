@@ -19,6 +19,7 @@ namespace CoreGame
         public Keys ExitKey { get; set; } = Keys.RightShift;
         public float ScrollSpeed { get; set; } = 0.25f;
         public float GlobalScale { get; set; } = 1.0f; // Changes runtime UI sizing
+        public bool IsAutoplay { get; set; } = false;
 
         // Hit Windows (Milliseconds)
         public float Window300 { get; set; } = 35f;
@@ -430,88 +431,142 @@ namespace CoreGame
             }
 
             // 4. Hit Detection Logic
-            bool hitPressed = false;
-            foreach (var key in HitKeys)
+            if (IsAutoplay)
             {
-                if (Keyboard.IsKeyPressed(key))
+                // Auto-hit notes exactly when the music timeline reaches or passes their TargetTimeMs
+                foreach (var note in _notes)
                 {
-                    hitPressed = true;
-                    break;
-                }
-            }
-
-            if (hitPressed)
-            {
-                _judgementRingScale = 1.22f; // Trigger responsive ring pulse
-
-                var targetNote = _notes.FirstOrDefault(n =>
-                    !n.IsProcessed &&
-                    !n.IsHolding && // Don't re-target already holding notes
-                    Math.Abs(n.TargetTimeMs - currentAudioTimeMs) <= Window50);
-
-                if (targetNote != null)
-                {
-                    // Strict Mode Verification: Target note's hold type must match current toggled mode!
-                    if (targetNote.IsHold != _isHoldMode)
+                    if (!note.IsProcessed && !note.IsHolding && currentAudioTimeMs >= note.TargetTimeMs)
                     {
-                        // Wrong Mode -> Auto Miss!
-                        targetNote.IsProcessed = true;
-                        targetNote.IsHit = false;
-                        HitsMiss++;
+                        // Match playfield mode to note type automatically!
+                        _isHoldMode = note.IsHold;
 
-                        Combo = 0;
-                        _comboUI.text = $"{Combo}x";
+                        _judgementRingScale = 1.22f; // Trigger responsive ring pulse
 
-                        targetNote.Velocity = new Vector2(-150f, 600f) * GlobalScale; // Gravity fling down
-                        targetNote.VisualNode.color = targetNote.VisualNode.color * 0.4f;
-
-                        SpawnFloatingText("Wrong Mode!", new Color(255, 50, 50), targetNote.Velocity * 0.8f, currentJudgeOffsetX);
-                    }
-                    else
-                    {
-                        // Mode is correct! Proceed with hit calculations
-                        float signedError = (float)currentAudioTimeMs - (float)targetNote.TargetTimeMs;
-                        AddHitError(signedError);
-
-                        if (targetNote.IsHold)
+                        if (note.IsHold)
                         {
-                            targetNote.IsHolding = true;
-                            targetNote.HoldLastTickTime = currentAudioTimeMs;
+                            note.IsHolding = true;
+                            note.HoldLastTickTime = currentAudioTimeMs;
 
-                            OnPlayHitSound?.Invoke(targetNote.HitSoundMask);
+                            OnPlayHitSound?.Invoke(note.HitSoundMask);
 
                             Combo++;
                             Score += 150 * Combo;
                             _scoreUI.text = Score.ToString();
                             _comboUI.text = $"{Combo}x";
 
-                            targetNote.Velocity = new Vector2(-150f, -400f) * GlobalScale;
-                            SpawnFloatingText("Hold!", new Color(255, 150, 50), targetNote.Velocity * 0.8f, currentJudgeOffsetX);
+                            note.Velocity = new Vector2(-150f, -400f) * GlobalScale;
+                            SpawnFloatingText("Hold!", new Color(255, 150, 50), note.Velocity * 0.8f, currentJudgeOffsetX);
                         }
                         else
                         {
-                            targetNote.IsProcessed = true;
-                            targetNote.IsHit = true;
+                            note.IsProcessed = true;
+                            note.IsHit = true;
 
-                            float error = Math.Abs(signedError);
-                            int hitValue = 0;
-                            Color hitColor = Color.White;
+                            float signedError = 0f; // Perfect accuracy!
+                            AddHitError(signedError);
 
-                            if (error <= Window300) { hitValue = 300; hitColor = new Color(50, 200, 255); HitsPerfect++; }
-                            else if (error <= Window100) { hitValue = 100; hitColor = new Color(100, 255, 100); HitsGood++; }
-                            else if (error <= Window50) { hitValue = 50; hitColor = new Color(255, 150, 50); HitsOk++; }
-
+                            HitsPerfect++;
                             Combo++;
-                            Score += hitValue * Combo;
+                            Score += 300 * Combo;
                             _scoreUI.text = Score.ToString();
                             _comboUI.text = $"{Combo}x";
 
-                            OnPlayHitSound?.Invoke(targetNote.HitSoundMask);
+                            OnPlayHitSound?.Invoke(note.HitSoundMask);
 
-                            targetNote.Velocity = new Vector2(-150f, -600f) * GlobalScale;
+                            note.Velocity = new Vector2(-150f, -600f) * GlobalScale;
+                            note.VisualNode.color = note.VisualNode.color * 0.4f;
+
+                            SpawnFloatingText("300", new Color(50, 200, 255), note.Velocity * 0.8f, currentJudgeOffsetX);
+                        }
+                    }
+                }
+            }
+            else
+            {
+                bool hitPressed = false;
+                foreach (var key in HitKeys)
+                {
+                    if (Keyboard.IsKeyPressed(key))
+                    {
+                        hitPressed = true;
+                        break;
+                    }
+                }
+
+                if (hitPressed)
+                {
+                    _judgementRingScale = 1.22f; // Trigger responsive ring pulse
+
+                    var targetNote = _notes.FirstOrDefault(n =>
+                        !n.IsProcessed &&
+                        !n.IsHolding && // Don't re-target already holding notes
+                        Math.Abs(n.TargetTimeMs - currentAudioTimeMs) <= Window50);
+
+                    if (targetNote != null)
+                    {
+                        // Strict Mode Verification: Target note's hold type must match current toggled mode!
+                        if (targetNote.IsHold != _isHoldMode)
+                        {
+                            // Wrong Mode -> Auto Miss!
+                            targetNote.IsProcessed = true;
+                            targetNote.IsHit = false;
+                            HitsMiss++;
+
+                            Combo = 0;
+                            _comboUI.text = $"{Combo}x";
+
+                            targetNote.Velocity = new Vector2(-150f, 600f) * GlobalScale; // Gravity fling down
                             targetNote.VisualNode.color = targetNote.VisualNode.color * 0.4f;
 
-                            SpawnFloatingText(hitValue.ToString(), hitColor, targetNote.Velocity * 0.8f, currentJudgeOffsetX);
+                            SpawnFloatingText("Wrong Mode!", new Color(255, 50, 50), targetNote.Velocity * 0.8f, currentJudgeOffsetX);
+                        }
+                        else
+                        {
+                            // Mode is correct! Proceed with hit calculations
+                            float signedError = (float)currentAudioTimeMs - (float)targetNote.TargetTimeMs;
+                            AddHitError(signedError);
+
+                            if (targetNote.IsHold)
+                            {
+                                targetNote.IsHolding = true;
+                                targetNote.HoldLastTickTime = currentAudioTimeMs;
+
+                                OnPlayHitSound?.Invoke(targetNote.HitSoundMask);
+
+                                Combo++;
+                                Score += 150 * Combo;
+                                _scoreUI.text = Score.ToString();
+                                _comboUI.text = $"{Combo}x";
+
+                                targetNote.Velocity = new Vector2(-150f, -400f) * GlobalScale;
+                                SpawnFloatingText("Hold!", new Color(255, 150, 50), targetNote.Velocity * 0.8f, currentJudgeOffsetX);
+                            }
+                            else
+                            {
+                                targetNote.IsProcessed = true;
+                                targetNote.IsHit = true;
+
+                                float error = Math.Abs(signedError);
+                                int hitValue = 0;
+                                Color hitColor = Color.White;
+
+                                if (error <= Window300) { hitValue = 300; hitColor = new Color(50, 200, 255); HitsPerfect++; }
+                                else if (error <= Window100) { hitValue = 100; hitColor = new Color(100, 255, 100); HitsGood++; }
+                                else if (error <= Window50) { hitValue = 50; hitColor = new Color(255, 150, 50); HitsOk++; }
+
+                                Combo++;
+                                Score += hitValue * Combo;
+                                _scoreUI.text = Score.ToString();
+                                _comboUI.text = $"{Combo}x";
+
+                                OnPlayHitSound?.Invoke(targetNote.HitSoundMask);
+
+                                targetNote.Velocity = new Vector2(-150f, -600f) * GlobalScale;
+                                targetNote.VisualNode.color = targetNote.VisualNode.color * 0.4f;
+
+                                SpawnFloatingText(hitValue.ToString(), hitColor, targetNote.Velocity * 0.8f, currentJudgeOffsetX);
+                            }
                         }
                     }
                 }
@@ -525,13 +580,16 @@ namespace CoreGame
                     if (note.IsHolding)
                     {
                         // Check if the user is still holding one of the gameplay keys AND is in Stream mode
-                        bool stillHolding = false;
-                        foreach (var key in HitKeys)
+                        bool stillHolding = IsAutoplay;
+                        if (!stillHolding)
                         {
-                            if (Keyboard.IsKeyDown(key))
+                            foreach (var key in HitKeys)
                             {
-                                stillHolding = true;
-                                break;
+                                if (Keyboard.IsKeyDown(key))
+                                {
+                                    stillHolding = true;
+                                    break;
+                                }
                             }
                         }
 

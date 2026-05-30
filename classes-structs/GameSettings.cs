@@ -18,6 +18,7 @@ namespace CoreGame
         public int MenuPollingRate { get; set; } = 250;
 
         // Keybindings
+        public string KeyExitGame { get; set; } = "Escape";
         public string KeyToggleCover { get; set; } = "Space";
         public string KeyStartGame { get; set; } = "Tab";
         public string KeyExitGameplay { get; set; } = "RightShift";

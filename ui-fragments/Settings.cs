@@ -17,7 +17,7 @@ namespace CoreGame
             {
                 anchorX = AnchorX.Left,
                 anchorY = AnchorY.Top,
-                size = new UDim2(0f, 1f, 510f, -60f), // Match the exact footprint of your song list
+                size = new UDim2(0f, 1f, 500f, -60f), // Match the exact footprint of your song list
                 scrollDirection = Axis.Vertical,
                 showScrollbar = false,
                 smoothing = 18f,
@@ -27,14 +27,10 @@ namespace CoreGame
                 {
                     // Smoothly interpolate positions from tucked away (-510px) to resting at the left edge (0px)
                     e.position = UDim2.Lerp(new UDim2(0f, 0, -510f, 60f), new UDim2(0f, 0f, 0f, 60f), MathF.Min(_settingsTweener.CurrentValue, _bgTweener.CurrentValue * (1f - _startTransitionTweener.CurrentValue)));
-                    
                     //e.alpha = _settingsTweener.CurrentValue;
 
-                    // Disable clipping (scissor rect) when completely off-screen to prevent MonoGame/XNA viewport overlap warnings
-                    e.clipMode = (e.position.OffsetX <= -509f) ? ClipMode.None : ClipMode.Clip;
-
-                    // Pull dynamic color mutations matching your global album art tint machine
-                    //e.color = new Color((byte)(_currentCoverColor.R * 0.85f), (byte)(_currentCoverColor.G * 0.85f), (byte)(_currentCoverColor.B * 0.85f), 100);
+                    // Disable scissor clipping when fully off-screen to prevent MonoGame viewport overlap warnings
+                    //e.clipMode = (e.position.OffsetX >= -509f) ? ClipMode.None : ClipMode.Clip;
                 }
             };
 
@@ -44,7 +40,7 @@ namespace CoreGame
                 Frame optionRow = new Frame
                 {
                     position = new UDim2(0f, 0f, 10f, _settingsYOffset),
-                    size = new UDim2(1f, 0f, 0f, 45f),
+                    size = new UDim2(.93f, 0f, 0f, 45f),
                     anchorX = AnchorX.Left,
                     anchorY = AnchorY.Top,
                     onUpdate = (e, dt) =>
@@ -241,6 +237,8 @@ namespace CoreGame
                 settingsPanel.children.Add(CreateKeybindRow("StartGame", "Start/Play Song Key", _settingsYOffset, () => _keyStartGame, (val) => _keyStartGame = val));
                 _settingsYOffset += 60f;
                 settingsPanel.children.Add(CreateKeybindRow("ExitGameplay", "Exit Song Key", _settingsYOffset, () => _keyExitGameplay, (val) => _keyExitGameplay = val));
+                _settingsYOffset += 60f;
+                settingsPanel.children.Add(CreateKeybindRow("ExitGame", "Exit Game Key", _settingsYOffset, () => _keyExitGame, (val) => _keyExitGame = val));
                 _settingsYOffset += 60f;
                 settingsPanel.children.Add(CreateKeybindRow("HitLeft", "Left Drum Hit", _settingsYOffset, () => _keyHitLeft, (val) => _keyHitLeft = val));
                 _settingsYOffset += 60f;
@@ -602,73 +600,6 @@ namespace CoreGame
             });
 
             return keybindBtn;
-        }
-
-        private Button CreateModToggle(string title, float yOffset, Func<bool> getState, Action<bool> setState)
-        {
-            float currentHoverScale = 0f;
-
-            Button toggleBtn = new Button
-            {
-                position = new UDim2(0.05f, 0f, 10f, yOffset), // align left like settings rows
-                anchorX = AnchorX.Left,
-                anchorY = AnchorY.Top,
-                onClick = (b) =>
-                {
-                    PlaySFX("select");
-                    setState(!getState()); // Flip the boolean
-                },
-                onHoverEnter = (b) => PlaySFX("hover"),
-                onUpdate = (e) =>
-                {
-                    byte r = (byte)(_currentCoverColor.R * 0.7f);
-                    byte g = (byte)(_currentCoverColor.G * 0.7f);
-                    byte b = (byte)(_currentCoverColor.B * 0.7f);
-
-                    float targetScale = e.IsHovered ? 1f : 0f;
-                    currentHoverScale = ArtMathHelper.Lerp(currentHoverScale, targetScale, 0.05f);
-
-                    // Height pop micro-animation matching settings!
-                    e.size = new UDim2(.9f, 0f, 30f * currentHoverScale, 55f);
-
-                    e.color = new Color(r, g, b, 175);
-                    e.hoverColor = new Color(r, g, b, 235);
-                    e.pressedColor = new Color(255, 255, 255, 255);
-                }
-            };
-
-            // Title label on the left
-            toggleBtn.children.Add(new TextFrame
-            {
-                text = title,
-                fontName = "gsans_bold",
-                position = new UDim2(0.05f, 0.5f, 0, 0f),
-                anchorX = AnchorX.Left,
-                anchorY = AnchorY.Center,
-                textAnchorX = AnchorX.Left,
-                textAnchorY = AnchorY.Center,
-                scale = 1.15f,
-                color = Color.White
-            });
-
-            // Status label (ON/OFF) on the right
-            toggleBtn.children.Add(new TextFrame
-            {
-                fontName = "gsans_bold",
-                position = new UDim2(0.95f, 0.5f, 0, 0f),
-                anchorX = AnchorX.Right,
-                anchorY = AnchorY.Center,
-                textAnchorX = AnchorX.Right,
-                textAnchorY = AnchorY.Center,
-                scale = 1.15f,
-                color = Color.White,
-                onUpdate = (t, dt) =>
-                {
-                    t.text = getState() ? "ON" : "OFF";
-                }
-            });
-
-            return toggleBtn;
         }
     }
 }

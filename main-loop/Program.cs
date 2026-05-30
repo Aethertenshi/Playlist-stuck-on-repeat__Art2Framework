@@ -50,6 +50,8 @@ namespace CoreGame
         private float _audioOffset = -55.35f;
 
         // ─── Customizable Keyboard Bindings ─────────────────────────────────
+        private Keys _keyExitGame = Keys.Escape;
+        private float _exitHoldTimer = 0f;
         private Keys _keyToggleCover = Keys.Space;
         private Keys _keyStartGame = Keys.Tab;
         private Keys _keyExitGameplay = Keys.RightShift;
@@ -83,7 +85,7 @@ namespace CoreGame
         private bool _isSettingsOpen = false;
         private bool _isCoverView = false;
         private bool _isStarting = false;
-        private Frame _scoreboardPanel = null!;
+        private ScrollingFrame _scoreboardPanel = null!;
         private bool _isListenScoreMode = false;
         private float _startTimer = 0f;
         private int _startPhase = 0;
@@ -99,6 +101,14 @@ namespace CoreGame
         private Tweener _startShrinkTweener = AddTween(new Tweener());
         private Tweener _listenScoreTweener = AddTween(new Tweener());
         private Tweener _peekBgTweener = AddTween(new Tweener());
+
+        // ─── Warning Screen Lifecycle ────────────────────────────────────────
+        private bool _inWarningScreen = true;
+        private float _warningParentAlpha = 1.0f;
+        private float _warningDoneTimer = 0f;
+        private int _currentFadeWordIndex = 0;
+        private List<WordController> _allWords = new();
+        private Frame _warningScreenFrame = null!;
 
         // ─── Intro Screen Welcome Lifecycle ──────────────────────────────────
         private bool _inIntro = true;
@@ -118,6 +128,7 @@ namespace CoreGame
         private float _speedMultiplier = 1.0f;
         private bool _adjustPitch = false;
         private bool _modHidden = false;
+        private bool _modAutoplay = false;
 
         // ─── Real-Time Color Smoothing Variables ────────────────────────────
         private Color _currentCoverColor = Color.White;
@@ -129,5 +140,47 @@ namespace CoreGame
         private string _currentAudioKey = "au_0";
         private int _audioCounter = 0;
         private Dictionary<string, Tweener> _audioTweeners = new();
+
+        //public void ManualDraw(float dt)
+        //{
+        //    if (_exitHoldTimer > 0f)
+        //    {
+        //        float progress = Math.Clamp(_exitHoldTimer / 1.0f, 0f, 1f);
+
+        //        // 1. Full-screen Cinematic Dim
+        //        DrawRectangle(0f, 0f, ScreenWidth, ScreenHeight, new Color(0, 0, 0, (byte)(progress * 180f)));
+
+        //        // 2. Draw Text: "Holding [Key] to Exit..."
+        //        string text = $"Holding {_keyExitGame} to Exit...";
+        //        ArtFrame.ArtTypes.Vector2 textSize = MeasureText("gsans_bold", text, 20f);
+        //        float textX = (ScreenWidth - textSize.X) / 2f;
+        //        float textY = (ScreenHeight / 2f) - 40f;
+
+        //        FontHelper.DrawTextPro(
+        //            "gsans_bold",
+        //            text,
+        //            new ArtFrame.ArtTypes.Vector2(textX, textY),
+        //            new ArtFrame.ArtTypes.Vector2(0f, 0f),
+        //            0f,
+        //            2.0f, // scale
+        //            new Color(255, 255, 255, 230)
+        //        );
+
+        //        // 3. Draw Progress Bar Background
+        //        float barWidth = 400f;
+        //        float barHeight = 8f;
+        //        float barX = (ScreenWidth - barWidth) / 2f;
+        //        float barY = (ScreenHeight / 2f) + 10f;
+
+        //        DrawRectangle(barX, barY, barWidth, barHeight, new Color(50, 50, 50, 150));
+
+        //        // 4. Draw Progress Bar Fill (with beautiful smooth theme color!)
+        //        float fillWidth = barWidth * progress;
+        //        byte r = _currentCoverColor.R;
+        //        byte g = _currentCoverColor.G;
+        //        byte b = _currentCoverColor.B;
+        //        DrawRectangle(barX, barY, fillWidth, barHeight, new Color(r, g, b, 255));
+        //    }
+        //}
     }
 }

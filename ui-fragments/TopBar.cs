@@ -171,7 +171,7 @@ namespace CoreGame
 
             modifiersBtn.children.Add(new TextFrame
             {
-                text = "Modifiers",
+                text = "Plugins",
                 fontName = "gsans_bold",
                 position = new UDim2(0.5f, 0.5f),
                 anchorX = AnchorX.Center,

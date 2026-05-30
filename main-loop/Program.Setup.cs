@@ -28,6 +28,9 @@ namespace CoreGame
     {
         public void Setup()
         {
+            // Start in smooth VSync mode for warning screen and logo intro!
+            SetVSyncMode();
+
             // Ensure the playlists directory exists in the output folder
             if (!Directory.Exists(SongsPath))
             {
@@ -41,8 +44,6 @@ namespace CoreGame
             LoadSettings();
 
             ConfigureWindow(width: 1920, height: 1080, title: "Playlist Stuck on Repeat", fullscreen: _settings.Fullscreen);
-            SetInputFramerate(_settings.MenuPollingRate);
-            SetFrameRate(_settings.MenuFps);
 
             LoadSFX("normal", "sounds/hitsounds/taiko-soft-hitnormal.wav");
             LoadSFX("whistle", "sounds/hitsounds/taiko-soft-hitwhistle.wav");
@@ -114,14 +115,15 @@ namespace CoreGame
                         activeMods
                     );
                     
-                    RefreshScoreboard();
+                    RefreshScoreboard(_scoreboardPanel);
                 }
 
                 // 1. Wipe the playfield clean and hide it
                 _taikofield.ResetState();
+                SetMusicLowPass(_currentAudioKey, false); // Make sure LowPass filter is off when returning to menu!
 
                 // 2. Audio Transition: Jump back to menu preview and restore volume!
-                SeekMusic(_currentAudioKey, _beatmap?.PreviewTime / 1000f ?? 0f);
+                //SeekMusic(_currentAudioKey, _beatmap?.PreviewTime / 1000f ?? 0f);
                 if (_audioTweeners.ContainsKey(_currentAudioKey))
                     _audioTweeners[_currentAudioKey].Restart(1.6f, _targetVolume, Easing.Exponential, Direction.Out);
 
@@ -129,8 +131,7 @@ namespace CoreGame
                 _isStarting = false;
                 _startPhase = 0;
 
-                SetInputFramerate(_settings.MenuPollingRate);
-                SetFrameRate(_settings.MenuFps);
+                SetPerformanceMode(_settings.MenuPollingRate, _settings.MenuFps);
 
                 //_rythmIndexer = new RhythmIndexer(new InterpolatingAudioClock(), new RhythmTracker(), () => GetMusicTimePlayed(_currentAudioKey)) { Beatmap = _beatmap, MusicOffset = -55.35f };
                 _startShrinkTweener.Restart(1f, 0f, Easing.Exponential, Direction.Out);
@@ -455,16 +456,16 @@ namespace CoreGame
                 {
                     string activeMods = "";
 
-                    if (_modHidden) activeMods += "HD ";
+                    if (_modHidden) activeMods += "HD | ";
 
                     // Check if speed has been altered
                     if (Math.Abs(_speedMultiplier - 1f) > 0.01f)
                     {
                         activeMods += _speedMultiplier > 1f ? "DT " : "HT ";
-                        activeMods += $"({_speedMultiplier:F2}x) ";
+                        activeMods += $"({_speedMultiplier:F2}x) | ";
                     }
 
-                    if (_adjustPitch) activeMods += "NC "; // Nightcore/Pitch modifier
+                    if (_adjustPitch) activeMods += "NC"; // Nightcore/Pitch modifier
 
                     e.text = string.IsNullOrWhiteSpace(activeMods) ? "NM" : activeMods.TrimEnd();
                     e.alpha = _bgTweener.CurrentValue * (1f - _startTransitionTweener.CurrentValue);
@@ -773,11 +774,14 @@ namespace CoreGame
                 onUpdate = (e, dt) =>
                 {
                     e.position = UDim2.Lerp(new UDim2(1f, 0f, 510f, 60f), new UDim2(1f, 0f, 0f, 60f), _bgTweener.CurrentValue * (1f - _startTransitionTweener.CurrentValue));
+                    // Disable scissor clipping when fully off-screen to prevent MonoGame viewport overlap warnings
+                    e.clipMode = (e.position.OffsetX >= 509f) ? ClipMode.None : ClipMode.Clip;
                 }
             };
 
             _playlistScroll = playlistScroll;
             _starRating = GetRealStarRating(_beatmap);
+            _scoreboardPanel = BuildScoreboardUI();
 
             // --- Drawing Index ---
             Add(bgDrop);
@@ -795,12 +799,15 @@ namespace CoreGame
 
             Add(_logoUI);
 
-            Add(BuildTopbarUI());
-            Add(BuildScoreboardUI());
-            RefreshScoreboard();
-
             Add(BuildSettingsUI());
             Add(BuildModifiersUI());
+            Add(BuildTopbarUI());
+            //Add(_scoreboardPanel);
+            //RefreshScoreboard(_scoreboardPanel);
+
+            // Initialize and add the WIP Warning Screen on top of everything!
+            SetupWarningScreen();
+
             Add(_taikofield);
 
             // Populate Playlist
@@ -849,202 +856,86 @@ namespace CoreGame
             };
 
             AddHelper(_rythmIndexer);
+ 
+             // Setup Welcome intro audio (we will play it after warning screen fades out!)
+             LoadMusic("welcome", "sounds/sfxs/welcome.wav");
+             SetMusicVolume("welcome", 0f);
+ 
+             // Load and pause the selected beatmap preview audio
+             SetMusicVolume(_currentAudioKey, 0f);
+             StopMusic(_currentAudioKey);
+ 
+             Tweener initialTweener = AddTween(new Tweener());
+             initialTweener.SetValue(0f); // Starts at 0 volume
+             _audioTweeners[_currentAudioKey] = initialTweener;
+ 
+             // Initialize OS Drag-and-Drop Handler
+             OszDropHandler.Initialize();
+         }         private void SetupWarningScreen()
+         {
+             _warningScreenFrame = new Frame
+             {
+                 size = new UDim2(1f, 1f),
+                 position = new UDim2(0.5f, 0.5f),
+                 anchorX = AnchorX.Center,
+                 anchorY = AnchorY.Center,
+                 color = Color.Black,
+                 alpha = 1.0f
+             };
 
-            // Setup and Play Welcome intro audio
-            LoadMusic("welcome", "sounds/sfxs/welcome.wav");
-            PlayMusic("welcome");
-            SetMusicVolume("welcome", _targetVolume);
+             // Define the 3 sentences to display
+             string gameVer = "v2026.0530rc1";
+             string s1 = "This project is work in progress";
+             string s2 = "Expect bugs and something breaking. Contribute to this game through github!";
+             string s3 = $"This game version is {gameVer}, read the changelog on github.";
 
-            // Load and pause the selected beatmap preview audio
-            SetMusicVolume(_currentAudioKey, 0f);
-            StopMusic(_currentAudioKey);
+             // We place them at different vertical offsets
+             AddSentenceToWarning(s1, "gsans_bold", 2f, Color.White, -28f);
+             AddSentenceToWarning(s2, "gsans", 1.6f, new Color(200, 200, 200), 0f);
+             AddSentenceToWarning(s3, "gsans", 1.45f, new Color(170, 170, 170), 25f);
 
-            Tweener initialTweener = AddTween(new Tweener());
-            initialTweener.SetValue(0f); // Starts at 0 volume
-            _audioTweeners[_currentAudioKey] = initialTweener;
+             // Add the parent warning screen frame to the pool so it draws over everything!
+             Add(_warningScreenFrame);
+         }
 
-            // Initialize OS Drag-and-Drop Handler
-            OszDropHandler.Initialize();
-        }
+         private void AddSentenceToWarning(string sentence, string fontName, float scale, Color color, float yPixelOffset)
+         {
+            string[] blacklistwords = { "p","q","g" };
+            string[] words = sentence.Split(' ');
+            float totalWidth = MeasureText(fontName, sentence, scale * 10f).X;
+            float spaceWidth = MeasureText(fontName, " ", scale * 10f).X;
 
-        private void RefreshScoreboard()
-        {
-            if (_scoreboardPanel == null) return;
-            
-            _scoreboardPanel.children.Clear();
+            float currentX = (ScreenWidth - totalWidth) / 2f;
 
-            if (_beatmap == null) return;
-
-            // Spotify style header
-            Frame header = new Frame
+            foreach (var word in words)
             {
-                position = new UDim2(0f, 0f, 0f, 15f),
-                size = new UDim2(1f, 0f, 0f, 35f),
-                anchorX = AnchorX.Left,
-                anchorY = AnchorY.Top,
-                color = new Color(0, 0, 0, 0)
-            };
-
-            header.children.Add(new TextFrame
-            {
-                text = "Listen Scores",
-                fontName = "gsans_bold",
-                position = new UDim2(0.05f, 0.5f, 0f, 0f),
-                anchorX = AnchorX.Center,
-                anchorY = AnchorY.Center,
-                textAnchorX = AnchorX.Center,
-                textAnchorY = AnchorY.Center,
-                scale = 1.15f,
-                color = Color.White
-            });
-
-            _scoreboardPanel.children.Add(header);
-
-            // Fetch leaderboard from ScoreManager
-            string mapKey = _beatmap.FilePath;
-            var scores = ScoreManager.GetLeaderboard(mapKey, _beatmap.Title, _beatmap.Version, 5);
-
-            float yOffset = 50f;
-            for (int i = 0; i < scores.Count; i++)
-            {
-                var scoreEntry = scores[i];
-                int rank = i + 1;
-
-                float currentHoverScale = 1f;
-                int rankIndex = rank; // local copy for lambda
-                
-                var rowBtn = new Button
+                bool ContainsBlacklistedChar = false;
+                foreach (char c in word)
                 {
-                    position = new UDim2(0f, 0f, 10f, yOffset),
-                    size = new UDim2(0.95f, 0f, 0f, 55f),
-                    anchorX = AnchorX.Left,
-                    anchorY = AnchorY.Top,
-                    onClick = (b) => {
-                        PlaySFX("select");
-                    },
-                    onHoverEnter = (b) => {
-                        PlaySFX("hover");
-                    }
-                };
-
-                rowBtn.onUpdate = (btn) =>
-                {
-                    float hoveredScale = btn.IsHovered ? 1.03f : 1f;
-                    float targetScale = btn.IsPressed ? hoveredScale + 0.02f : hoveredScale;
-                    currentHoverScale = ArtMathHelper.Lerp(currentHoverScale, targetScale, 0.1f);
-                    
-                    rowBtn.size = new UDim2(0.95f, 0f, 0f, 55f * currentHoverScale);
-                    
-                    byte r = (byte)(_currentCoverColor.R * 0.7f);
-                    byte g = (byte)(_currentCoverColor.G * 0.7f);
-                    byte b = (byte)(_currentCoverColor.B * 0.7f);
-
-                    btn.color = new Color(r, g, b, 140);
-                    btn.hoverColor = new Color((byte)Math.Clamp(r + 20, 0, 255), (byte)Math.Clamp(g + 20, 0, 255), (byte)Math.Clamp(b + 20, 0, 255), 190);
-                    btn.pressedColor = new Color((byte)Math.Clamp(r + 40, 0, 255), (byte)Math.Clamp(g + 40, 0, 255), (byte)Math.Clamp(b + 40, 0, 255), 220);
-                };
-
-                // Rank badge (Left)
-                Color rankColor = Color.White;
-                if (rankIndex == 1) rankColor = new Color(255, 215, 0);       // Gold
-                else if (rankIndex == 2) rankColor = new Color(192, 192, 192); // Silver
-                else if (rankIndex == 3) rankColor = new Color(205, 127, 50);  // Bronze
-
-                var rankBadge = new TextFrame
-                {
-                    text = $"#{rankIndex}",
-                    fontName = "gsans_bold",
-                    position = new UDim2(0.04f, 0.5f, 0f, 0f),
-                    anchorX = AnchorX.Left,
-                    anchorY = AnchorY.Center,
-                    textAnchorX = AnchorX.Left,
-                    textAnchorY = AnchorY.Center,
-                    scale = 1.05f,
-                    color = rankColor
-                };
-                rowBtn.children.Add(rankBadge);
-
-                // Player name + Mods capsule
-                string displayName = scoreEntry.PlayerName;
-                var nameText = new TextFrame
-                {
-                    text = displayName,
-                    fontName = "gsans_bold",
-                    position = new UDim2(0.16f, 0.5f, 0f, -10f),
-                    anchorX = AnchorX.Left,
-                    anchorY = AnchorY.Center,
-                    textAnchorX = AnchorX.Left,
-                    textAnchorY = AnchorY.Center,
-                    scale = 0.95f,
-                    color = Color.White
-                };
-                rowBtn.children.Add(nameText);
-
-                // Mods badge capsule if any mods are active (e.g. DT, HD)
-                if (!string.IsNullOrEmpty(scoreEntry.Mods) && scoreEntry.Mods != "NM")
-                {
-                    var modCapsule = new TextFrame
-                    {
-                        text = scoreEntry.Mods,
-                        fontName = "gsans_bold",
-                        position = new UDim2(0.52f, 0.5f, 0f, -10f),
-                        anchorX = AnchorX.Left,
-                        anchorY = AnchorY.Center,
-                        textAnchorX = AnchorX.Left,
-                        textAnchorY = AnchorY.Center,
-                        scale = 0.75f,
-                        color = new Color(30, 215, 96),
-                        backgroundColor = new Color(0, 0, 0),
-                        backgroundAlpha = 0.6f,
-                        backgroundPadding = 4f
-                    };
-                    rowBtn.children.Add(modCapsule);
+                    if (blacklistwords.Contains(c.ToString()))
+                        ContainsBlacklistedChar = true;
                 }
 
-                // Stats (Bottom Left: Accuracy and Max Combo)
-                string stats = $"{scoreEntry.Accuracy:F2}%  //  {scoreEntry.MaxCombo}x";
-                var statsText = new TextFrame
+                float wordWidth = MeasureText(fontName, word, scale * 10f).X;
+
+                var textNode = new TextFrame
                 {
-                    text = stats,
-                    fontName = "gsans",
-                    position = new UDim2(0.16f, 0.5f, 0f, 10f),
+                    text = word,
+                    fontName = fontName,
+                    scale = scale,
+                    position = new UDim2(0f, 0.5f, currentX, ContainsBlacklistedChar? yPixelOffset : yPixelOffset - (scale*1.45f)),
                     anchorX = AnchorX.Left,
-                    anchorY = AnchorY.Center,
+                    anchorY = AnchorY.Bottom,
                     textAnchorX = AnchorX.Left,
-                    textAnchorY = AnchorY.Center,
-                    scale = 0.75f,
-                    color = new Color(175, 175, 175)
+                    textAnchorY = AnchorY.Bottom,
+                    color = color,
+                    alpha = 0f // Start completely hidden
                 };
-                rowBtn.children.Add(statsText);
 
-                // Score (Right)
-                var scoreText = new TextFrame
-                {
-                    text = $"{scoreEntry.Score:N0}",
-                    fontName = "gsans_bold",
-                    position = new UDim2(0.92f, 0.5f, -12f, 0f),
-                    anchorX = AnchorX.Right,
-                    anchorY = AnchorY.Center,
-                    textAnchorX = AnchorX.Right,
-                    textAnchorY = AnchorY.Center,
-                    scale = 1.0f,
-                    color = Color.White
-                };
-                rowBtn.children.Add(scoreText);
+                _warningScreenFrame.children.Add(textNode);
+                _allWords.Add(new WordController { TextNode = textNode, Alpha = 0f });
 
-                // Right-Edge Color Stripe (Vertical color bar matching ranking colors)
-                var edgeStripe = new Frame
-                {
-                    position = new UDim2(1f, 0.5f, -4f, 0f),
-                    size = new UDim2(0f, 0f, 4f, 30f),
-                    anchorX = AnchorX.Right,
-                    anchorY = AnchorY.Center,
-                    color = rankColor
-                };
-                rowBtn.children.Add(edgeStripe);
-
-                _scoreboardPanel.children.Add(rowBtn);
-                yOffset += 65f;
+                currentX += wordWidth + spaceWidth;
             }
         }
     }
