@@ -78,7 +78,6 @@ namespace CoreGame
 
                     // Cache and save
                     _cache[bm.FilePath] = rating;
-                    Save();
 
                     return rating;
                 }

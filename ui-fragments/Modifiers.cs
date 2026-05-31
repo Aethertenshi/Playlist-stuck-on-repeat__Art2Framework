@@ -125,7 +125,79 @@ namespace CoreGame
             modifiersPanel.children.Add(CreateModToggle("Autoplay", _modifiersYOffset, () => _modAutoplay, (val) => { _modAutoplay = val; AudioHelper.SetMusicSpeed(_currentAudioKey, _actualMusicSpeed, _adjustPitch); }));
             _modifiersYOffset += 60f;
 
+            // 5. Play Mode Toggle
+            modifiersPanel.children.Add(CreatePlayModeToggle("Play Mode", _modifiersYOffset, () => _modSingleMode, (val) => { _modSingleMode = val; }));
+            _modifiersYOffset += 60f;
+
             return modifiersPanel;
+        }
+
+        private Button CreatePlayModeToggle(string title, float yOffset, Func<bool> getState, Action<bool> setState)
+        {
+            float currentHoverScale = 0f;
+
+            Button toggleBtn = new Button
+            {
+                position = new UDim2(0f, 0f, 10f, yOffset),
+                anchorX = AnchorX.Left,
+                anchorY = AnchorY.Top,
+                onClick = (b) =>
+                {
+                    AudioHelper.PlaySFX("select");
+                    setState(!getState()); // Flip the boolean
+                },
+                onHoverEnter = (b) => AudioHelper.PlaySFX("hover"),
+                onUpdate = (e) =>
+                {
+                    byte r = (byte)(_currentCoverColor.R * 0.7f);
+                    byte g = (byte)(_currentCoverColor.G * 0.7f);
+                    byte b = (byte)(_currentCoverColor.B * 0.7f);
+
+                    float hoveredScale = e.IsHovered ? 1f : 0f;
+                    float targetScale = getState() ? hoveredScale + 0.25f : hoveredScale;
+                    currentHoverScale = ArtMathHelper.Lerp(currentHoverScale, targetScale, 0.05f);
+
+                    // Height pop micro-animation matching settings!
+                    e.size = new UDim2(.9f, 0f, 30f * currentHoverScale, 55f);
+
+                    e.color = new Color(!getState() ? r : (byte)(r * 1.3f), !getState() ? g : (byte)(g * 1.3f), !getState() ? b : (byte)(b * 1.3f), 175);
+                    e.hoverColor = new Color(r, g, b, 235);
+                    e.pressedColor = new Color(r, g, b, 250);
+                }
+            };
+
+            // Title label on the left
+            toggleBtn.children.Add(new TextFrame
+            {
+                text = title,
+                fontName = "gsans_bold",
+                position = new UDim2(0.05f, 0.5f, 0, 0f),
+                anchorX = AnchorX.Left,
+                anchorY = AnchorY.Center,
+                textAnchorX = AnchorX.Left,
+                textAnchorY = AnchorY.Center,
+                scale = 1.15f,
+                color = Color.White
+            });
+
+            // Status label (Single Mode / Switch Mode) on the right
+            toggleBtn.children.Add(new TextFrame
+            {
+                fontName = "gsans_bold",
+                position = new UDim2(0.95f, 0.5f, 0, 0f),
+                anchorX = AnchorX.Right,
+                anchorY = AnchorY.Center,
+                textAnchorX = AnchorX.Right,
+                textAnchorY = AnchorY.Center,
+                scale = 1.15f,
+                color = Color.White,
+                onUpdate = (t, dt) =>
+                {
+                    t.text = getState() ? "Single Mode" : "Switch Mode";
+                }
+            });
+
+            return toggleBtn;
         }
 
         private Button CreateModToggle(string title, float yOffset, Func<bool> getState, Action<bool> setState)

@@ -34,8 +34,11 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 
 [Files]
 Source: "publish\PSoR-v2026.0530rc1-win-x64\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
-Source: "publish\PSoR-v2026.0530rc1-win-x64\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "publish\PSoR-v2026.0530rc1-win-x64\*"; DestDir: "{app}"; Excludes: "playlists,playlists\*,settings.json,songs_star_cache.json"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; NOTE: Don't use "Flags: ignoreversion" on any shared system files
+
+[Dirs]
+Name: "{app}\playlists"
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\{#MyAppIconName}"

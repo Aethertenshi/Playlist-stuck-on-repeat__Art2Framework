@@ -164,6 +164,11 @@ namespace CoreGame
                                 SetSFXVolume("select", e.currentValue);
                                 SetSFXVolume("beat", e.currentValue);
                                 SetSFXVolume("dwbeat", e.currentValue);
+
+                                SetSFXVolume("normal", e.currentValue);
+                                SetSFXVolume("whistle", e.currentValue);
+                                SetSFXVolume("finish", e.currentValue);
+                                SetSFXVolume("clap", e.currentValue);
                                 SaveSettings();
                             }
                         }
@@ -242,7 +247,7 @@ namespace CoreGame
                 _settingsYOffset += 60f;
                 settingsPanel.children.Add(CreateKeybindRow("HitLeft", "Left Drum Hit", _settingsYOffset, () => _keyHitLeft, (val) => _keyHitLeft = val));
                 _settingsYOffset += 60f;
-                settingsPanel.children.Add(CreateKeybindRow("HitRight", "Right Drum Hit", _settingsYOffset, () => _keyHitRight, (val) => _keyHitRight = val));
+                settingsPanel.children.Add(CreateKeybindRow("HitRight", "Right Drum Hit", _settingsYOffset, () => _keyHitRight, (val) => { _keyHitRight = val; Console.WriteLine(val); }));
                 _settingsYOffset += 60f;
             }
 
@@ -330,7 +335,7 @@ namespace CoreGame
                             anchorY = AnchorY.Center,
                             minValue = 0.5f,
                             maxValue = 3.0f,
-                            defaultValue = 1.4f,
+                            defaultValue = 1f,
                             currentValue = _settings.GlobalScale,
                             trackColor = new Color(100, 100, 100, 75),
                             onValueChanges = (e) =>
@@ -360,44 +365,48 @@ namespace CoreGame
                 _settingsYOffset += 60f;
 
                 // --- Gameplay FPS ---
-                settingsPanel.children.Add(CreateCycleSetting("Gameplay FPS", _settingsYOffset, 
-                    new int[] { 30, 60, 80, 120, 250, 400, 500 }, 
-                    () => _settings.GameplayFps, 
-                    (val) => {
+                settingsPanel.children.Add(CreateCycleSetting("Gameplay FPS", _settingsYOffset,
+                    new int[] { 60, 80, 120, 250, 400, 500 },
+                    () => _settings.GameplayFps,
+                    (val) =>
+                    {
                         _settings.GameplayFps = val;
-                        if (_startPhase == 3) SetFrameRate(val);
+                        if (_startPhase == 3) SetPerformanceMode(_settings.GameplayFps);
                     }));
                 _settingsYOffset += 60f;
 
                 // --- Menu FPS ---
-                settingsPanel.children.Add(CreateCycleSetting("Menu FPS", _settingsYOffset, 
-                    new int[] { 30, 60, 80, 120, 250, 400, 500 }, 
-                    () => _settings.MenuFps, 
-                    (val) => {
+                settingsPanel.children.Add(CreateCycleSetting("Menu FPS", _settingsYOffset,
+                    new int[] { 30, 60, 80, 120, 250 },
+                    () => _settings.MenuFps,
+                    (val) =>
+                    {
                         _settings.MenuFps = val;
-                        if (_startPhase != 3) SetFrameRate(val);
+                        if (_startPhase != 3) SetPerformanceMode(_settings.MenuFps);
                     }));
                 _settingsYOffset += 60f;
 
-                // --- Gameplay Polling Rate ---
-                settingsPanel.children.Add(CreateCycleSetting("Gameplay Polling Rate", _settingsYOffset, 
-                    new int[] { 100, 250, 400, 900, 1200 }, 
-                    () => _settings.GameplayPollingRate, 
-                    (val) => {
-                        _settings.GameplayPollingRate = val;
-                        if (_startPhase == 3) SetInputFramerate(val);
-                    }));
-                _settingsYOffset += 60f;
+                // --- Gameplay Update Rate ---
+                //settingsPanel.children.Add(CreateCycleSetting("Gameplay Update Rate", _settingsYOffset,
+                //    new int[] { 100, 250, 400, 900, 1200 },
+                //    () => _settings.GameplayPollingRate,
+                //    (val) =>
+                //    {
+                //        _settings.GameplayPollingRate = val;
+                //        if (_startPhase == 3) SetPerformanceMode(_settings.GameplayPollingRate, _settings.GameplayFps);
+                //    }));
+                //_settingsYOffset += 60f;
 
-                // --- Menu Polling Rate ---
-                settingsPanel.children.Add(CreateCycleSetting("Menu Polling Rate", _settingsYOffset, 
-                    new int[] { 100, 250, 400, 900, 1200 }, 
-                    () => _settings.MenuPollingRate, 
-                    (val) => {
-                        _settings.MenuPollingRate = val;
-                        if (_startPhase != 3) SetInputFramerate(val);
-                    }));
-                _settingsYOffset += 60f;
+                //// --- Menu Update Rate ---
+                //settingsPanel.children.Add(CreateCycleSetting("Menu Update Rate", _settingsYOffset,
+                //    new int[] { 100, 250, 400, 900, 1200 },
+                //    () => _settings.MenuPollingRate,
+                //    (val) =>
+                //    {
+                //        _settings.MenuPollingRate = val;
+                //        if (_startPhase != 3) SetPerformanceMode(_settings.MenuPollingRate, _settings.MenuFps);
+                //    }));
+                //_settingsYOffset += 60f;
             }
         }
 
@@ -579,6 +588,7 @@ namespace CoreGame
                 {
                     bool isListeningThis = _isListeningForKey && _listeningActionName == actionName;
                     t.color = isListeningThis ? Color.Black : Color.White;
+
                 }
             });
 
