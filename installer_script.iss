@@ -2,7 +2,7 @@
 ; See Inno Setup documentation for details on creating script files!
 
 #define MyAppName "Playlist Stuck on Repeat"
-#define MyAppVersion "2026.0530rc1"
+#define MyAppVersion "2026.0531rc1"
 #define MyAppPublisher "Aethertenshi"
 #define MyAppExeName "Playlist-stuck-on-repeat__Art2Framework.exe"
 #define MyAppIconName "PSoR.ico"
@@ -20,7 +20,7 @@ AllowNoIcons=yes
 LicenseFile=LICENSE.txt
 ; The OutputDir will be in the publish folder
 OutputDir=publish
-OutputBaseFilename=PSoR-v2026.0530rc1-win-x64-Setup
+OutputBaseFilename=PSoR-v2026.0531rc1-win-x64-Setup
 SetupIconFile={#MyAppIconName}
 Compression=lzma2/max
 SolidCompression=yes
@@ -33,8 +33,8 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-Source: "publish\PSoR-v2026.0530rc1-win-x64\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
-Source: "publish\PSoR-v2026.0530rc1-win-x64\*"; DestDir: "{app}"; Excludes: "playlists,playlists\*,settings.json,songs_star_cache.json"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "publish\PSoR-v2026.0531rc1-win-x64\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "publish\PSoR-v2026.0531rc1-win-x64\*"; DestDir: "{app}"; Excludes: "playlists,playlists\*,settings.json,songs_star_cache.json"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; NOTE: Don't use "Flags: ignoreversion" on any shared system files
 
 [Dirs]
