@@ -104,7 +104,7 @@ namespace CoreGame
         private Tweener _peekBgTweener = AddTween(new Tweener());
 
         // ─── Warning Screen Lifecycle ────────────────────────────────────────
-        private bool _inWarningScreen = false;
+        private bool _inWarningScreen = true;
         private float _warningParentAlpha = 1.0f;
         private float _warningDoneTimer = 0f;
         private int _currentFadeWordIndex = 0;

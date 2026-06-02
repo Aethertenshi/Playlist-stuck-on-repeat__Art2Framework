@@ -16,7 +16,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="D:\Projects_Baru\C#\Art2Framework\Art2Framework.csproj" />
+    <ProjectReference Include="../Art2Framework/Art2Framework.csproj" />
   </ItemGroup>
 
   <ItemGroup>

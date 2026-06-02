@@ -779,7 +779,7 @@ namespace CoreGame
 			//RefreshScoreboard(_scoreboardPanel);
 
 			// Initialize and add the WIP Warning Screen on top of everything!
-			//SetupWarningScreen();
+			SetupWarningScreen();
 
 			Add(_taikofield);
 
@@ -831,9 +831,9 @@ namespace CoreGame
 			AddHelper(_rythmIndexer);
 
 			// Setup Welcome intro audio (we will play it after warning screen fades out!)
-			_inWarningScreen = false;
+			// _inWarningScreen = false;
 			LoadMusic("welcome", "sounds/sfxs/welcome.wav");
-			PlayMusic("welcome");
+			// PlayMusic("welcome");
 			SetMusicVolume("welcome", _targetVolume);
  
 			// Load and pause the selected beatmap preview audio
@@ -871,7 +871,7 @@ namespace CoreGame
 			AddSentenceToWarning(s3, "gsans", 1.45f, new Color(170, 170, 170), 25f);
 
 			// Add the parent warning screen frame to the pool so it draws over everything!
-			//Add(_warningScreenFrame);
+			Add(_warningScreenFrame);
 			
 		}
 
