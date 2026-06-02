@@ -21,6 +21,7 @@ namespace CoreGame
 		public void Setup()
 		{
 			// Start in smooth VSync mode for warning screen and logo intro!
+            SetVSyncMode();
 
 			// Ensure the playlists directory exists in the output folder
 			if (!Directory.Exists(SongsPath))
@@ -34,8 +35,9 @@ namespace CoreGame
 			// Load persistent game settings
 			LoadSettings();
 
-			ConfigureWindow(width: 1920, height: 1080, title: "Playlist Stuck on Repeat", fullscreen: _settings.Fullscreen);
-            SetVSyncMode();
+			ConfigureWindow(width: DefaultScreenWidth, height: DefaultScreenHeight, title: "Playlist Stuck on Repeat", fullscreen: _settings.Fullscreen);
+
+			Thread.Sleep(5); // Small delay to ensure the window is properly initialized before applying settings
 
             LoadSFX("normal", "sounds/hitsounds/soft-hitnormal.wav");
 			LoadSFX("whistle", "sounds/hitsounds/soft-hitwhistle.wav");
@@ -74,7 +76,7 @@ namespace CoreGame
 				ScrollSpeed = _settings.ScrollSpeed,
 				GlobalScale = _settings.GlobalScale,
 				ExitKey = _keyExitGameplay,
-				HitKeys = new Keys[] { _keyHitLeft, _keyHitRight },
+				HitKeys = new Keys[] { _keyHitLeft1, _keyHitLeft2, _keyHitRight1, _keyHitRight2 },
 				alpha = 0f // Start hidden
 			};
 			_taikofield.OnPlayHitSound = (hitSoundMask) =>

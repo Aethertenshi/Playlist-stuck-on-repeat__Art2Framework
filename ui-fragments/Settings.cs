@@ -245,10 +245,15 @@ namespace CoreGame
                 _settingsYOffset += 60f;
                 settingsPanel.children.Add(CreateKeybindRow("ExitGame", "Exit Game Key", _settingsYOffset, () => _keyExitGame, (val) => _keyExitGame = val));
                 _settingsYOffset += 60f;
-                settingsPanel.children.Add(CreateKeybindRow("HitLeft", "Left Drum Hit", _settingsYOffset, () => _keyHitLeft, (val) => _keyHitLeft = val));
+                settingsPanel.children.Add(CreateKeybindRow("HitLeft1", "Left 1 Hit", _settingsYOffset, () => _keyHitLeft1, (val) => _keyHitLeft1 = val));
                 _settingsYOffset += 60f;
-                settingsPanel.children.Add(CreateKeybindRow("HitRight", "Right Drum Hit", _settingsYOffset, () => _keyHitRight, (val) => { _keyHitRight = val; Console.WriteLine(val); }));
+                settingsPanel.children.Add(CreateKeybindRow("HitLeft2", "Left 2 Hit", _settingsYOffset, () => _keyHitLeft2, (val) => _keyHitLeft2 = val));
                 _settingsYOffset += 60f;
+                settingsPanel.children.Add(CreateKeybindRow("HitRight1", "Right 1 Hit", _settingsYOffset, () => _keyHitRight1, (val) => _keyHitRight1 = val));
+                _settingsYOffset += 60f;
+                settingsPanel.children.Add(CreateKeybindRow("HitRight2", "Right 2 Hit", _settingsYOffset, () => _keyHitRight2, (val) => _keyHitRight2 = val));
+                _settingsYOffset += 60f;
+
             }
 
             if (currentPage != "" && currentPage == "Gameplay Settings")
@@ -360,7 +365,7 @@ namespace CoreGame
                     () => _settings.Fullscreen, 
                     (val) => {
                         _settings.Fullscreen = val;
-                        ConfigureWindow(1920, 1080, "Playlist Stuck on Repeat", val);
+                        ConfigureWindow(DefaultScreenWidth, DefaultScreenHeight, "Playlist Stuck on Repeat", val);
                     }));
                 _settingsYOffset += 60f;
 

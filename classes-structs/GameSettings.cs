@@ -22,8 +22,10 @@ namespace CoreGame
         public string KeyToggleCover { get; set; } = "Space";
         public string KeyStartGame { get; set; } = "Tab";
         public string KeyExitGameplay { get; set; } = "RightShift";
-        public string KeyHitLeft { get; set; } = "W";
-        public string KeyHitRight { get; set; } = "Q";
+        public string KeyHitLeft1 { get; set; } = "Q";
+        public string KeyHitLeft2 { get; set; } = "W";
+        public string KeyHitRight1 { get; set; } = "O";
+        public string KeyHitRight2 { get; set; } = "P";
         public string KeyToggleListenScore { get; set; } = "LeftShift";
     }
 }

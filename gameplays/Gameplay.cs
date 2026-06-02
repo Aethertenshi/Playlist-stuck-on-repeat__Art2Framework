@@ -16,7 +16,7 @@ namespace CoreGame
     public class TaikoPlayfield : Frame
     {
         // --- Configuration ---
-        public Keys[] HitKeys { get; set; } = { Keys.W, Keys.Q };
+        public Keys[] HitKeys { get; set; } = { Keys.W, Keys.Q, Keys.E, Keys.R };
         public Keys ExitKey { get; set; } = Keys.RightShift;
         public float ScrollSpeed { get; set; } = 0.25f;
         public float GlobalScale { get; set; } = 1.0f;

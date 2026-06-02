@@ -120,9 +120,9 @@ namespace CoreGame
             }
 
             // Smoothly approach the target color using floats to prevent byte-truncation getting stuck
-            _colorR += (_targetCoverColor.R - _colorR) * (dt * 5f);
-            _colorG += (_targetCoverColor.G - _colorG) * (dt * 5f);
-            _colorB += (_targetCoverColor.B - _colorB) * (dt * 5f);
+            _colorR += (_targetCoverColor.R - _colorR) * (dt * 2.5f);
+            _colorG += (_targetCoverColor.G - _colorG) * (dt * 2.5f);
+            _colorB += (_targetCoverColor.B - _colorB) * (dt * 2.5f);
 
             _currentCoverColor = new Color((byte)Math.Clamp(_colorR, 0, 255), (byte)Math.Clamp(_colorG, 0, 255), (byte)Math.Clamp(_colorB, 0, 255));
 
@@ -145,14 +145,14 @@ namespace CoreGame
                     else
                     {
                         // Scale it much larger so it extends far beyond the logo's boundaries!
-                        float scaleMultiplier = 1f + wave.Progress * 0.35f; // expands to 1.35x scale!
+                        float scaleMultiplier = 1f + wave.Progress * 0.15f; // expands to 1.15x scale!
                         float baseSizeScale = 0.4f * MathF.Max(_logoTweener.CurrentValue, _startTransitionTweener.CurrentValue);
                         wave.VisualNode.size = new UDim2(baseSizeScale * scaleMultiplier, baseSizeScale * scaleMultiplier);
                         
                         // Center inside blurBg (which aligns perfectly with logo center)
                         wave.VisualNode.position = _logoUI.position;
                         wave.VisualNode.rotation = _logoRotation.CurrentValue;
-                        wave.VisualNode.alpha = ((1f - wave.Progress) * 0.65f) * (1f - _peekBg);
+                        wave.VisualNode.alpha = (1f - wave.Progress) * 0.65f * (1f - _peekBg);
                     }
                 }
             }
@@ -329,8 +329,10 @@ namespace CoreGame
                         if (_listeningActionName == "ToggleCover") _keyToggleCover = key;
                         else if (_listeningActionName == "StartGame") _keyStartGame = key;
                         else if (_listeningActionName == "ExitGameplay") { _keyExitGameplay = key; if (_taikofield != null) _taikofield.ExitKey = key; }
-                        else if (_listeningActionName == "HitLeft") { _keyHitLeft = key; RealTimeInputEngine.ConfigureKeys(new int[2] { (int)_keyHitLeft, (int)_keyHitRight }); if (_taikofield != null) _taikofield.HitKeys = new Keys[] { _keyHitLeft, _keyHitRight }; }
-                        else if (_listeningActionName == "HitRight") { _keyHitRight = key; RealTimeInputEngine.ConfigureKeys(new int[2] { (int)_keyHitLeft, (int)_keyHitRight }); if (_taikofield != null) _taikofield.HitKeys = new Keys[] { _keyHitLeft, _keyHitRight }; }
+                        else if (_listeningActionName == "HitLeft1") { _keyHitLeft1 = key; RealTimeInputEngine.ConfigureKeys(new int[4] { (int)_keyHitLeft1, (int)_keyHitLeft2, (int)_keyHitRight1, (int)_keyHitRight2 }); if (_taikofield != null) _taikofield.HitKeys = new Keys[] { _keyHitLeft1, _keyHitLeft2, _keyHitRight1, _keyHitRight2 }; }
+                        else if (_listeningActionName == "HitLeft2") { _keyHitLeft2 = key; RealTimeInputEngine.ConfigureKeys(new int[4] { (int)_keyHitLeft1, (int)_keyHitLeft2, (int)_keyHitRight1, (int)_keyHitRight2 }); if (_taikofield != null) _taikofield.HitKeys = new Keys[] { _keyHitLeft1, _keyHitLeft2, _keyHitRight1, _keyHitRight2 }; }
+                        else if (_listeningActionName == "HitRight1") { _keyHitRight1 = key; RealTimeInputEngine.ConfigureKeys(new int[4] { (int)_keyHitLeft1, (int)_keyHitLeft2, (int)_keyHitRight1, (int)_keyHitRight2 }); if (_taikofield != null) _taikofield.HitKeys = new Keys[] { _keyHitLeft1, _keyHitLeft2, _keyHitRight1, _keyHitRight2 }; }
+                        else if (_listeningActionName == "HitRight2") { _keyHitRight2 = key; RealTimeInputEngine.ConfigureKeys(new int[4] { (int)_keyHitLeft1, (int)_keyHitLeft2, (int)_keyHitRight1, (int)_keyHitRight2 }); if (_taikofield != null) _taikofield.HitKeys = new Keys[] { _keyHitLeft1, _keyHitLeft2, _keyHitRight1, _keyHitRight2 }; }
                         else if (_listeningActionName == "ListenScore") _keyToggleListenScore = key;
                         else if (_listeningActionName == "ExitGame") _keyExitGame = key;
 
@@ -623,7 +625,7 @@ namespace CoreGame
             {
                 try
                 {
-                    Image loadedTexture = LoadImageResized(id, bgPath, 200, 200);
+                    Image loadedTexture = LoadImageResized(id, bgPath, 320, 180);
                     thumbFrame.texture = loadedTexture;
                 }
                 catch (Exception ex)
@@ -789,7 +791,7 @@ namespace CoreGame
             {
                 try
                 {
-                    Image loadedTexture = LoadImageResized(id, bgPath, 200, 200);
+                    Image loadedTexture = LoadImageResized(id, bgPath, 320, 180);
                     thumbFrame.texture = loadedTexture;
                 }
                 catch (Exception ex)
@@ -826,10 +828,12 @@ namespace CoreGame
                         if (Enum.TryParse<Keys>(_settings.KeyToggleCover, out var k1)) _keyToggleCover = k1;
                         if (Enum.TryParse<Keys>(_settings.KeyStartGame, out var k2)) _keyStartGame = k2;
                         if (Enum.TryParse<Keys>(_settings.KeyExitGameplay, out var k3)) _keyExitGameplay = k3;
-                        if (Enum.TryParse<Keys>(_settings.KeyHitLeft, out var k4)) _keyHitLeft = k4;
-                        if (Enum.TryParse<Keys>(_settings.KeyHitRight, out var k5)) _keyHitRight = k5;
+                        if (Enum.TryParse<Keys>(_settings.KeyHitLeft1, out var k4)) _keyHitLeft1 = k4;
+                        if (Enum.TryParse<Keys>(_settings.KeyHitRight1, out var k5)) _keyHitRight1 = k5;
                         if (Enum.TryParse<Keys>(_settings.KeyToggleListenScore, out var k6)) _keyToggleListenScore = k6;
                         if (Enum.TryParse<Keys>(_settings.KeyExitGame, out var k7)) _keyExitGame = k7;
+                        if (Enum.TryParse<Keys>(_settings.KeyHitLeft2, out var k8)) _keyHitLeft2 = k8;
+                        if (Enum.TryParse<Keys>(_settings.KeyHitRight2, out var k9)) _keyHitRight2 = k9;
 
                         if (_taikofield != null)
                         {
@@ -865,8 +869,10 @@ namespace CoreGame
                 _settings.KeyToggleCover = _keyToggleCover.ToString();
                 _settings.KeyStartGame = _keyStartGame.ToString();
                 _settings.KeyExitGameplay = _keyExitGameplay.ToString();
-                _settings.KeyHitLeft = _keyHitLeft.ToString();
-                _settings.KeyHitRight = _keyHitRight.ToString();
+                _settings.KeyHitLeft1 = _keyHitLeft1.ToString();
+                _settings.KeyHitLeft2 = _keyHitLeft2.ToString();
+                _settings.KeyHitRight1 = _keyHitRight1.ToString();
+                _settings.KeyHitRight2 = _keyHitRight2.ToString();
                 _settings.KeyToggleListenScore = _keyToggleListenScore.ToString();
                 _settings.KeyExitGame = _keyExitGame.ToString();
 

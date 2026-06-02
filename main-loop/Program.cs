@@ -56,9 +56,11 @@ namespace CoreGame
         private Keys _keyToggleCover = Keys.Space;
         private Keys _keyStartGame = Keys.Tab;
         private Keys _keyExitGameplay = Keys.RightShift;
-        private Keys _keyHitLeft = Keys.W;
+        private Keys _keyHitLeft1 = Keys.Q;
+        private Keys _keyHitLeft2 = Keys.W;
         private Keys _keyToggleListenScore = Keys.LeftShift;
-        private Keys _keyHitRight = Keys.Q;
+        private Keys _keyHitRight1 = Keys.O;
+        private Keys _keyHitRight2 = Keys.P;
         private bool _isListeningForKey = false;
         private string _listeningActionName = "";
 
@@ -90,7 +92,6 @@ namespace CoreGame
         private bool _isListenScoreMode = false;
         private float _startTimer = 0f;
         private int _startPhase = 0;
-        private float _transitionDuration = 2f; // Customize transition speed here (seconds)
         private float _peekBg = 0f;
 
         // ─── Tweener Transition Pools ────────────────────────────────────────
