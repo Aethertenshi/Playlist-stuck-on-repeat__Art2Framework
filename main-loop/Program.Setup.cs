@@ -39,10 +39,10 @@ namespace CoreGame
 
 			Thread.Sleep(5); // Small delay to ensure the window is properly initialized before applying settings
 
-            LoadSFX("normal", "sounds/hitsounds/soft-hitnormal.wav");
-			LoadSFX("whistle", "sounds/hitsounds/soft-hitwhistle.wav");
-			LoadSFX("finish", "sounds/hitsounds/soft-hitfinish.wav");
-			LoadSFX("clap", "sounds/hitsounds/soft-hitclap.wav");
+            LoadSFX("normal", "sounds/hitsounds/normal-hitnormal.wav");
+			LoadSFX("whistle", "sounds/hitsounds/normal-hitwhistle.wav");
+			LoadSFX("finish", "sounds/hitsounds/normal-hitfinish.wav");
+			LoadSFX("clap", "sounds/hitsounds/normal-hitclap.wav");
 
 			LoadSFX("beat", "sounds/sfxs/heartbeat.mp3");
 			LoadSFX("dwbeat", "sounds/sfxs/logo-downbeat.wav");

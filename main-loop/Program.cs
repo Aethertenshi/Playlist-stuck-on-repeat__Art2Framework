@@ -116,7 +116,6 @@ namespace CoreGame
         private bool _inIntro = true;
         private float _introAlpha = 0f;
         private float _introTransitionTimer = 0f;
-       
         private bool _transitionFired = false;
         private GridTransitionRadial _welcomeTransition = null!;
         private Tweener _logoRotation = AddTween(new Tweener());

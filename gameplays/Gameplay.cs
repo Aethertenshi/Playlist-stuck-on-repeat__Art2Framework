@@ -210,15 +210,50 @@ namespace CoreGame
             RealTimeInputEngine.ConfigureKeys(rawIntKeys);
             // ----------------------------
 
+            // Compute base velocity from the first timing point so that only green-line
+            // SV changes affect scroll speed — BPM alone no longer distorts note speed.
+            // Previously this was a hardcoded / 0.28 which made high-BPM maps scroll
+            // disproportionately faster than low-BPM maps.
+            double baseVelocity = 0.28; // safe fallback
+            if (beatmap.TimingPoints.Count > 0)
+            {
+                baseVelocity = beatmap.GetSliderVelocityAt(beatmap.TimingPoints[0].Time);
+                if (baseVelocity <= 0) baseVelocity = 0.28;
+            }
+
+            bool isMania = beatmap.Mode == 3;
+
             int noteCount = beatmap.HitObjects.Count;
             _notes = new GameplayNote[noteCount];
 
             for (int i = 0; i < noteCount; i++)
             {
                 OsuHitObject hitObject = beatmap.HitObjects[i];
-                bool isHold = hitObject.ObjectType == HitObjectType.Hold || hitObject.ObjectType == HitObjectType.Slider;
-                double duration = isHold && hitObject is OsuSlider slider ? slider.DurationMs : 0;
-                double scrollSpeedMult = beatmap.GetSliderVelocityAt(hitObject.Time) / 0.28;
+
+                // Determine if this object is a hold/sustained note:
+                // - In mania (Mode 3): only explicit Hold notes are holds
+                // - In other modes: Sliders are treated as holds, spinners as holds
+                bool isHold;
+                double duration = 0;
+
+                if (isMania)
+                {
+                    isHold = hitObject.ObjectType == HitObjectType.Hold;
+                    if (isHold && hitObject is OsuSlider maniaHold)
+                        duration = maniaHold.DurationMs;
+                }
+                else
+                {
+                    isHold = hitObject.ObjectType == HitObjectType.Slider
+                          || hitObject.ObjectType == HitObjectType.Spinner;
+
+                    if (hitObject is OsuSlider slider)
+                        duration = slider.DurationMs;
+                    else if (hitObject is OsuNote spinnerNote && spinnerNote.ObjectType == HitObjectType.Spinner)
+                        duration = spinnerNote.DurationMs;
+                }
+
+                double scrollSpeedMult = beatmap.GetSliderVelocityAt(hitObject.Time) / baseVelocity;
 
                 double noteSpeed = ScrollSpeed * scrollSpeedMult * GlobalScale;
                 double calculatedPreempt = Math.Clamp(ScreenWidth / noteSpeed, 100.0, 15000.0);
@@ -239,6 +274,7 @@ namespace CoreGame
                 };
             }
         }
+
 
         public void ResetState()
         {

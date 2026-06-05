@@ -528,7 +528,7 @@ namespace CoreGame
             // 5. Create and start the Fade-In Tweener
             var fadeInTweener = AddTween(new Tweener());
             fadeInTweener.SetValue(0f); // Snap tweener state to 0
-            fadeInTweener.Restart(0.7f, _targetVolume, Easing.Exponential, Direction.Out);
+            fadeInTweener.Restart(0.7f, _targetVolume, Easing.Exponential, Direction.In);
 
             // Track it in our dictionary
             _audioTweeners[_currentAudioKey] = fadeInTweener;
