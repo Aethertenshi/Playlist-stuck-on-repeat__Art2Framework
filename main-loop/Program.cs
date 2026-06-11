@@ -29,6 +29,12 @@ namespace CoreGame
         static void Main() => Engine.Run<MainGame>();
     }
 
+    public enum GameplayMode
+    {
+        Taiko,
+        Stack
+    }
+
     public partial class MainGame : IArt
     {
         // ─── Game Constants ──────────────────────────────────────────────────
@@ -37,12 +43,21 @@ namespace CoreGame
 
         // ─── Rendering & Core Visual Components ─────────────────────────────────
         private GaussianBlurEffect _blur = new();
-        private TaikoPlayfield _taikofield;
+        private TaikoPlayfield? _taikofield;
+        private StackPlayfield? _stackfield;
+        private ResultScreen? _resultscreen;
+        private bool _inResultScreen = false;
+        private float _gameplayFinishTimer = 0f;
+        private GameplayMode _activeGameplayMode = GameplayMode.Taiko;
+        private OnlineManager _online = new("http://192.168.1.49:3000");
         private ImageButton _logoUI = null!;
         private EffectFrame _blurBgUI = null!;
         private Frame _shockwaveHolder = null!;
         private ScrollingFrame _playlistScroll = null!;
         private ImageFrame _bgImageFrame = null!;
+        private Frame _playerControlFrame = null!;
+        private Frame _bgDrop = null!;
+        private VideoFrame? _bgVideoFrame;
 
         // ─── Startup & Audio Preferences (Settings) ──────────────────────────
         private GameSettings _settings = new();
@@ -58,7 +73,6 @@ namespace CoreGame
         private Keys _keyExitGameplay = Keys.RightShift;
         private Keys _keyHitLeft1 = Keys.Q;
         private Keys _keyHitLeft2 = Keys.W;
-        private Keys _keyToggleListenScore = Keys.LeftShift;
         private Keys _keyHitRight1 = Keys.O;
         private Keys _keyHitRight2 = Keys.P;
         private bool _isListeningForKey = false;
@@ -82,29 +96,36 @@ namespace CoreGame
         // ─── Settings & Mod UI Layout Variables ──────────────────────────────
         private float _settingsYOffset = 15f;
         private float _modifiersYOffset = 15f;
+        private float _currentDt = 0f;
 
         // ─── Screen Transition & Menu States ─────────────────────────────────
         private bool _isModifiersOpen = false;
         private bool _isSettingsOpen = false;
+        private bool _isAccountOpen = false;
         private bool _isCoverView = false;
         private bool _isStarting = false;
-        private ScrollingFrame _scoreboardPanel = null!;
-        private bool _isListenScoreMode = false;
         private float _startTimer = 0f;
         private int _startPhase = 0;
+        private bool _isLowPassEnabled = false;
         private float _peekBg = 0f;
+        private bool _isDraggingProgressBar = false;
+        private float _dragProgress = 0f;
+        private string _bgVideoFilename = "";
+        private float _videoSeekCooldown = 0f;
 
         // ─── Tweener Transition Pools ────────────────────────────────────────
         private Tweener _modifiersTweener = AddTween(new Tweener());
         private Tweener _bgTweener = AddTween(new Tweener());
         private Tweener _logoTweener = AddTween(new Tweener());
         private Tweener _settingsTweener = AddTween(new Tweener());
+        private Tweener _accountTweener = AddTween(new Tweener());
         private Tweener _startTransitionTweener = AddTween(new Tweener());
         private Tweener _startShrinkTweener = AddTween(new Tweener());
-        private Tweener _listenScoreTweener = AddTween(new Tweener());
         private Tweener _peekBgTweener = AddTween(new Tweener());
+        private Tweener _lowPassTweener = AddTween(new Tweener());
 
         // ─── Warning Screen Lifecycle ────────────────────────────────────────
+        private bool _showWarningScreen = false; // Toggle this to false to skip the warning screen and go straight to the intro
         private bool _inWarningScreen = true;
         private float _warningParentAlpha = 1.0f;
         private float _warningDoneTimer = 0f;
@@ -129,7 +150,7 @@ namespace CoreGame
         private bool _adjustPitch = false;
         private bool _modHidden = false;
         private bool _modAutoplay = false;
-        private bool _modSingleMode = false;
+        private bool _modSingleMode = true;
 
         // ─── Real-Time Color Smoothing Variables ────────────────────────────
         private Color _currentCoverColor = Color.White;
@@ -179,6 +200,78 @@ namespace CoreGame
                 float fillWidth = barWidth * progress;
                 DrawRectangle(barX, barY, fillWidth, barHeight, new Color(_currentCoverColor.R, _currentCoverColor.G, _currentCoverColor.B, 255));
             }
+        }
+
+        private float GetActivePlayfieldAlpha()
+        {
+            if (_activeGameplayMode == GameplayMode.Taiko)
+                return _taikofield?.alpha ?? 0f;
+            else
+                return _stackfield?.alpha ?? 0f;
+        }
+
+        private void RestartGameplay()
+        {
+            _inResultScreen = false;
+            _gameplayFinishTimer = 0f;
+            _resultscreen?.Hide();
+
+            SetPerformanceMode(_settings.GameplayFps);
+            Engine.HighPrecisionLimiter.SetMaxFps(_settings.GameplayFps);
+
+            _startPhase = 3;
+            _isStarting = true;
+            _startTimer = 0f;
+            SetMusicLowPass(_currentAudioKey, false);
+
+            StopMusic(_currentAudioKey);
+            SeekMusic(_currentAudioKey, 0f);
+
+            _rythmIndexer?.Reset(0f);
+
+            if (_beatmap != null)
+            {
+                _beatmap = _parser.Parse(_beatmap.FilePath, metadataOnly: false);
+            }
+
+            Action onSplitFinished = () =>
+            {
+                if (_audioTweeners.ContainsKey(_currentAudioKey))
+                {
+                    _audioTweeners[_currentAudioKey].Restart(0.5f, _targetVolume, Easing.Fluid, Direction.Out);
+                    PlayMusic(_currentAudioKey);
+                }
+            };
+
+            if (_activeGameplayMode == GameplayMode.Taiko)
+            {
+                _taikofield?.alpha = 1f; // Show immediately on restart
+                _taikofield?.IsAutoplay = _modAutoplay;
+                _taikofield?.SingleMode = _modSingleMode;
+                _taikofield?.GlobalScale = _settings.GlobalScale;
+                _taikofield?.ResetState();
+                _taikofield?.LoadBeatmap(_beatmap != null ? _beatmap : null);
+                _taikofield?.OnSplitFinished = onSplitFinished;
+
+                _stackfield?.ResetState();
+                _stackfield?.alpha = 0f;
+                _stackfield?.LoadBeatmap(null);
+            }
+            else
+            {
+                _stackfield?.alpha = 1f; // Show immediately on restart
+                _stackfield?.IsAutoplay = _modAutoplay;
+                _stackfield?.GlobalScale = _settings.GlobalScale;
+                _stackfield?.ResetState();
+                _stackfield?.LoadBeatmap(_beatmap);
+                _stackfield?.OnSplitFinished = onSplitFinished;
+
+                _taikofield?.ResetState();
+                _taikofield?.alpha = 0f;
+                _taikofield?.LoadBeatmap(null);
+            }
+
+            onSplitFinished();
         }
     }
 }

@@ -1,4 +1,4 @@
-﻿using ArtFrame;
+using ArtFrame;
 using ArtFrame.ArtTypes;
 using ArtFrame.Easings;
 using ArtFrame.UIModifier;
@@ -40,6 +40,27 @@ namespace CoreGame
                 {
                     AudioHelper.PlaySFX("hover");
                 },
+                onClick = (btn) =>
+                {
+                    AudioHelper.PlaySFX("select");
+                    _isAccountOpen = !_isAccountOpen;
+
+                    // Hide Settings panel if it's open
+                    if (_isAccountOpen && _isSettingsOpen)
+                    {
+                        _isSettingsOpen = false;
+                        _settingsTweener.Restart(0.9f, 0f, Easing.Fluid, Direction.Out);
+                    }
+
+                    // Hide Modifiers panel if it's open
+                    if (_isAccountOpen && _isModifiersOpen)
+                    {
+                        _isModifiersOpen = false;
+                        _modifiersTweener.Restart(0.9f, 0f, Easing.Fluid, Direction.Out);
+                    }
+
+                    _accountTweener.Restart(duration: 0.9f, targetValue: _isAccountOpen ? 1.0f : 0f, Easing.Fluid, Direction.Out);
+                },
                 onUpdate = (btn) =>
                 {
                     // The same lerp logic from your song list
@@ -63,7 +84,6 @@ namespace CoreGame
 
             accountBtn.children.Add(new TextFrame
             {
-                text = "Account",
                 fontName = "gsans_bold",
                 position = new UDim2(0.5f, 0.5f),
                 anchorX = AnchorX.Center,
@@ -71,7 +91,11 @@ namespace CoreGame
                 textAnchorX = AnchorX.Center,
                 textAnchorY = AnchorY.Center,
                 scale = 1.5f,
-                color = Color.White
+                color = Color.White,
+                onUpdate = (tf, dt) =>
+                {
+                    tf.text = _online.IsLoggedIn ? _online.Username : "Account";
+                }
             });
             topBar.children.Add(accountBtn);
 
@@ -93,6 +117,13 @@ namespace CoreGame
                     {
                         _isModifiersOpen = false;
                         _modifiersTweener.Restart(0.9f, 0f, Easing.Fluid, Direction.Out);
+                    }
+
+                    // Hide Account panel if it's open
+                    if (_isSettingsOpen && _isAccountOpen)
+                    {
+                        _isAccountOpen = false;
+                        _accountTweener.Restart(0.9f, 0f, Easing.Fluid, Direction.Out);
                     }
 
                     _settingsTweener.Restart(duration: 0.9f, targetValue: _isSettingsOpen ? 1.0f : 0f, Easing.Fluid, Direction.Out);
@@ -165,6 +196,13 @@ namespace CoreGame
                         _settingsTweener.Restart(0.9f, 0f, Easing.Fluid, Direction.Out);
                     }
 
+                    // Hide Account panel if it's open
+                    if (_isModifiersOpen && _isAccountOpen)
+                    {
+                        _isAccountOpen = false;
+                        _accountTweener.Restart(0.9f, 0f, Easing.Fluid, Direction.Out);
+                    }
+
                     _modifiersTweener.Restart(duration: 0.9f, targetValue: _isModifiersOpen ? 1.0f : 0f, Easing.Fluid, Direction.Out);
                 },
             };
@@ -182,6 +220,54 @@ namespace CoreGame
                 color = Color.White
             });
             topBar.children.Add(modifiersBtn);
+
+            // 5. The Gameplay Mode Button
+            float modeHoverScale = 1f;
+            Button modeBtn = new Button
+            {
+                size = new UDim2(0f, 1f, 120f, 0f),
+                onHoverEnter = (btn) =>
+                {
+                    AudioHelper.PlaySFX("hover");
+                },
+                onUpdate = (btn) =>
+                {
+                    float targetScale = btn.IsHovered ? 1.32f : 1f;
+                    modeHoverScale = ArtMathHelper.Lerp(modeHoverScale, targetScale, 0.05f);
+                    btn.size = new UDim2(0f, 1f, 120f * modeHoverScale, 0f);
+
+                    byte r = (byte)(_currentCoverColor.R * 0.85f);
+                    byte g = (byte)(_currentCoverColor.G * 0.85f);
+                    byte b = (byte)(_currentCoverColor.B * 0.85f);
+
+                    btn.color = new Color(r, g, b, 175);
+                    btn.hoverColor = new Color(r, g, b, 235);
+                    btn.pressedColor = new Color(r, g, b, 255);
+                    btn.alpha = _bgTweener.CurrentValue * (1f - _startTransitionTweener.CurrentValue);
+                },
+                onClick = (btn) =>
+                {
+                    AudioHelper.PlaySFX("select");
+                    _activeGameplayMode = (_activeGameplayMode == GameplayMode.Taiko) ? GameplayMode.Stack : GameplayMode.Taiko;
+                },
+            };
+
+            modeBtn.children.Add(new TextFrame
+            {
+                fontName = "gsans_bold",
+                position = new UDim2(0.5f, 0.5f),
+                anchorX = AnchorX.Center,
+                anchorY = AnchorY.Center,
+                textAnchorX = AnchorX.Center,
+                textAnchorY = AnchorY.Center,
+                scale = 1.5f,
+                color = Color.White,
+                onUpdate = (textFrame, dt) =>
+                {
+                    textFrame.text = $"Mode: {_activeGameplayMode.ToString().ToUpper()}";
+                }
+            });
+            topBar.children.Add(modeBtn);
 
             return topBar;
         }

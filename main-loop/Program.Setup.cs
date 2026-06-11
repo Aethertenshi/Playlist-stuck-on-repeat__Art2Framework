@@ -37,15 +37,12 @@ namespace CoreGame
 
 			ConfigureWindow(width: DefaultScreenWidth, height: DefaultScreenHeight, title: "Playlist Stuck on Repeat", fullscreen: _settings.Fullscreen);
 
-			Thread.Sleep(5); // Small delay to ensure the window is properly initialized before applying settings
-
             LoadSFX("normal", "sounds/hitsounds/normal-hitnormal.wav");
 			LoadSFX("whistle", "sounds/hitsounds/normal-hitwhistle.wav");
 			LoadSFX("finish", "sounds/hitsounds/normal-hitfinish.wav");
 			LoadSFX("clap", "sounds/hitsounds/normal-hitclap.wav");
 
 			LoadSFX("beat", "sounds/sfxs/heartbeat.mp3");
-			LoadSFX("dwbeat", "sounds/sfxs/logo-downbeat.wav");
 			LoadSFX("hover", "sounds/sfxs/default-hover.wav");
 			LoadSFX("select", "sounds/sfxs/default-select.wav");
 			LoadSFX("keypress1", "sounds/sfxs/key-press-1.mp3");
@@ -56,6 +53,12 @@ namespace CoreGame
 			LoadSFX("play-click", "sounds/sfxs/menu-play-click.wav");
 
 			// Apply loaded SFX volumes
+			SetSFXVolume("normal", _effectsVolume);
+			SetSFXVolume("whistle", _effectsVolume);
+			SetSFXVolume("finish", _effectsVolume);
+			SetSFXVolume("clap", _effectsVolume);
+			SetSFXVolume("play-click", _effectsVolume);
+
 			SetSFXVolume("hover", _effectsVolume);
 			SetSFXVolume("select", _effectsVolume);
 			SetSFXVolume("beat", _effectsVolume);
@@ -79,45 +82,38 @@ namespace CoreGame
 				HitKeys = new Keys[] { _keyHitLeft1, _keyHitLeft2, _keyHitRight1, _keyHitRight2 },
 				alpha = 0f // Start hidden
 			};
-			_taikofield.OnPlayHitSound = (hitSoundMask) =>
+
+			_stackfield = new StackPlayfield(LoadImage("circle", "content/hitcircle.png"), "gsans_bold")
+			{
+				size = new UDim2(1f, 0, 1f, 0),
+				position = new UDim2(0.5f, 0.5f),
+				anchorX = AnchorX.Center,
+				anchorY = AnchorY.Center,
+				ScrollSpeed = _settings.ScrollSpeed,
+				GlobalScale = _settings.GlobalScale,
+				ExitKey = _keyExitGameplay,
+				HitKeys = new Keys[] { _keyHitLeft1, _keyHitLeft2, _keyHitRight1, _keyHitRight2 },
+				alpha = 0f // Start hidden
+			};
+
+			Action<int> playHitSound = (hitSoundMask) =>
 			{
 				PlaySFX("beat");
 				if ((hitSoundMask & 2) > 0) PlaySFX("whistle");
 				if ((hitSoundMask & 4) > 0) PlaySFX("finish");
 				if ((hitSoundMask & 8) > 0) PlaySFX("clap");
 			};
-			_taikofield.OnExit = () =>
+
+			_taikofield.OnPlayHitSound = playHitSound;
+			_stackfield.OnPlayHitSound = playHitSound;
+
+			Action exitGameplay = () =>
 			{
-				// Save player's score to ScoreManager if they actually played
-				//if (_taikofield.Score > 0 || _taikofield.HitsPerfect > 0 || _taikofield.HitsGood > 0 || _taikofield.HitsOk > 0 || _taikofield.HitsMiss > 0)
-				//{
-				//	string activeMods = "";
-				//	if (_modHidden) activeMods += "HD ";
-				//	if (Math.Abs(_speedMultiplier - 1f) > 0.01f)
-				//	{
-				//		activeMods += _speedMultiplier > 1f ? "DT " : "HT ";
-				//	}
-				//	if (_adjustPitch) activeMods += "NC ";
-				//	activeMods = string.IsNullOrWhiteSpace(activeMods) ? "NM" : activeMods.TrimEnd();
-
-				//	ScoreManager.AddScore(
-				//		_beatmap?.FilePath ?? "", 
-				//		"You", 
-				//		_taikofield.Score, 
-				//		_taikofield.GetAccuracy(), 
-				//		_taikofield.MaxComboReached, 
-				//		activeMods
-				//	);
-					
-				//	RefreshScoreboard(_scoreboardPanel);
-				//}
-
-				// 1. Wipe the playfield clean and hide it
 				_taikofield.ResetState();
+				_stackfield.ResetState();
 				SetMusicLowPass(_currentAudioKey, false); // Make sure LowPass filter is off when returning to menu!
 
 				// 2. Audio Transition: Jump back to menu preview and restore volume!
-				//SeekMusic(_currentAudioKey, _beatmap?.PreviewTime / 1000f ?? 0f);
 				if (_audioTweeners.ContainsKey(_currentAudioKey))
 					_audioTweeners[_currentAudioKey].Restart(1.6f, _targetVolume, Easing.Exponential, Direction.Out);
 
@@ -128,25 +124,45 @@ namespace CoreGame
 				SetPerformanceMode(_settings.MenuFps);
 				Engine.HighPrecisionLimiter.SetMaxFps(_settings.MenuFps);
 
-				//_rythmIndexer = new RhythmIndexer(new InterpolatingAudioClock(), new RhythmTracker(), () => GetMusicTimePlayed(_currentAudioKey)) { Beatmap = _beatmap, MusicOffset = -55.35f };
 				_startShrinkTweener.Restart(1f, 0f, Easing.Exponential, Direction.Out);
 				_startTransitionTweener.Restart(1.5f, 0f, Easing.Exponential, Direction.Out);
 
-                if (_beatmap != null)
-                {
-                    // Evict all gameplay hit-objects from memory
-                    _beatmap = _parser.Parse(_beatmap.FilePath, metadataOnly: true);
-                }
-                _taikofield.LoadBeatmap(null);
-            };
+				if (_beatmap != null)
+				{
+					// Evict all gameplay hit-objects from memory
+					_beatmap = _parser.Parse(_beatmap.FilePath, metadataOnly: true);
+				}
+				_taikofield.LoadBeatmap(null);
+				_stackfield.LoadBeatmap(null);
 
-			// Bind the update loop directly to the Frame component
+				if (_bgVideoFrame != null)
+				{
+					_bgVideoFrame.Stop();
+					_bgVideoFrame.skipDraw = true;
+				}
+				_bgDrop.alpha = 1f;
+			};
+
+			_taikofield.OnExit = exitGameplay;
+			_stackfield.OnExit = exitGameplay;
+
+			// Bind the update loop directly to the Frame components
 			_taikofield.onUpdate = (e, dt) =>
 			{
-				// ONLY run physics and hit detection if we are actively in the game scene
-				if (_startPhase == 3 && _rythmIndexer != null)
+				// ONLY run physics and hit detection if we are actively in the game scene and mode matches
+				if (_activeGameplayMode == GameplayMode.Taiko && _startPhase == 3 && _rythmIndexer != null)
 				{
+					_taikofield.MusicSpeedMultiplier = _actualMusicSpeed;
 					_taikofield.UpdatePlayfield(dt, _rythmIndexer.CurrentProgress);
+				}
+			};
+
+			_stackfield.onUpdate = (e, dt) =>
+			{
+				if (_activeGameplayMode == GameplayMode.Stack && _startPhase == 3 && _rythmIndexer != null)
+				{
+					_stackfield.MusicSpeedMultiplier = _actualMusicSpeed;
+					_stackfield.UpdatePlayfield(dt, _rythmIndexer.CurrentProgress);
 				}
 			};
 
@@ -212,6 +228,7 @@ namespace CoreGame
 					e.color = Color.LerpColor(menuColor, new Color((byte)(_currentCoverColor.R * 0.35f), (byte)(_currentCoverColor.G * 0.35f), (byte)(_currentCoverColor.B * 0.35f)), _startTransitionTweener.CurrentValue);
 				}
 			};
+			_bgDrop = bgDrop;
 
 			_blurBgUI = new EffectFrame
 			{
@@ -224,25 +241,21 @@ namespace CoreGame
 				{
 					if (_blur != null)
 					{
-						float activePanelValue = MathF.Max(_settingsTweener.CurrentValue, _modifiersTweener.CurrentValue);
-						float effectiveListenScore = _listenScoreTweener.CurrentValue * (1f - activePanelValue);
-
-						// 1. Sizing: Shrunk cover in Listen/Score mode
-						float coverSize = ArtMathHelper.Lerp(500f, 360f, effectiveListenScore);
-						e.size = UDim2.Lerp(UDim2.FromScale(1f, 1f), UDim2.FromOffset(coverSize, coverSize), _bgTweener.CurrentValue);
-
-						// 2. Position: Shift cover to top-left in Listen/Score mode
-						float baseTargetX = ArtMathHelper.Lerp(0.38f, 0.42f, activePanelValue); // Cleaned nested lerp
-						float currentTargetX = ArtMathHelper.Lerp(baseTargetX, 0.5f, _startTransitionTweener.CurrentValue);
-
-						float targetX = ArtMathHelper.Lerp(currentTargetX, currentTargetX - 0.08f, effectiveListenScore);
-						float targetY = ArtMathHelper.Lerp(0.5f, 0.32f, effectiveListenScore);
-
 						float t_shrink = _startShrinkTweener.CurrentValue;
-						float finalY = ArtMathHelper.Lerp(targetY, -0.6f, t_shrink);
 
-						e.position = UDim2.Lerp(UDim2.FromScale(0.5f, 0.5f), UDim2.FromScale(targetX, finalY), _bgTweener.CurrentValue);
-						e.alpha = 1f - t_shrink;
+						// 1. Sizing: Shrink cover to 0.5f (Taiko) or 0.7f (Stack)
+						float targetScale = (_activeGameplayMode == GameplayMode.Taiko) ? 0.5f : 0.7f;
+						float currentTarget = ArtMathHelper.Lerp(0.8f, targetScale, t_shrink);
+						e.size = UDim2.Lerp(UDim2.FromScale(1f, 1f), UDim2.FromScale(currentTarget, currentTarget), _bgTweener.CurrentValue);
+
+						// 2. Position: Shift cover to left boundary (X=0.0f) and slide up off-screen (Taiko) or stay centered (Stack)
+						float targetY = (_activeGameplayMode == GameplayMode.Taiko) ? ArtMathHelper.Lerp(0.5f, -0.5f, t_shrink) : 0.5f;
+						float targetX = ArtMathHelper.Lerp(0f, 0.5f, _startTransitionTweener.CurrentValue);
+						e.position = UDim2.Lerp(UDim2.FromScale(0.5f, 0.5f), UDim2.FromScale(targetX, targetY), _bgTweener.CurrentValue);
+
+						// 3. Alpha: Fade out completely (Taiko) or fade to 0.5f (Stack)
+						float targetAlpha = (_activeGameplayMode == GameplayMode.Taiko) ? (1f - t_shrink) : ArtMathHelper.Lerp(1f, 0.1f, t_shrink);
+						e.alpha = targetAlpha;
 
 						_blur.BlurAmount = ArtMathHelper.Lerp(0f, 3.7f, 1f - MathF.Max(_bgTweener.CurrentValue, _peekBg));
 						e.BypassEffect = _bgTweener.CurrentValue >= 0.99f;
@@ -263,7 +276,9 @@ namespace CoreGame
 					// 3. Smoothly interpolate Color (Dark gray -> Dynamic Cover Color)
 					e.color = Color.LerpColor(new Color(200, 200, 200), Color.White, _bgTweener.CurrentValue);
 
-					e.alpha = 1f - _startShrinkTweener.CurrentValue;
+					float targetAlpha = (_activeGameplayMode == GameplayMode.Taiko) ? (1f - _startShrinkTweener.CurrentValue) : ArtMathHelper.Lerp(1f, 0.25f, _startShrinkTweener.CurrentValue);
+					e.alpha = targetAlpha;
+					// e.alpha = (_activeGameplayMode == GameplayMode.Taiko) ? (1f - _startShrinkTweener.CurrentValue) : 1f;
 
 					// Input Polling
 					if ((Keyboard.IsKeyPressed(_keyToggleCover) || (Mouse.LeftClicked() && !_isCoverView)) && !_isStarting && !_inIntro && !_isListeningForKey && !Mouse.RightDown())
@@ -322,26 +337,18 @@ namespace CoreGame
 					else
 					{
 						float activePanelValue = MathF.Max(_settingsTweener.CurrentValue, _modifiersTweener.CurrentValue);
-						float effectiveListenScore = _listenScoreTweener.CurrentValue * (1f - activePanelValue);
 
-						// Calculate dynamic size matching the cover shrink factor (shrinks to 72% in Listen/Score view)
-						float logoScaleFactor = ArtMathHelper.Lerp(0.25f, 0.25f * 0.72f, effectiveListenScore);
-						e.size = (new UDim2(0.4f, 0.4f) * MathF.Max(_logoTweener.CurrentValue, _startTransitionTweener.CurrentValue)) * MathF.Max((1f - _bgTweener.CurrentValue), logoScaleFactor);
+						// Calculate dynamic size matching the cover shrink factor
+						e.size = new UDim2(0.4f, 0.3f) * MathF.Max(_logoTweener.CurrentValue, _startTransitionTweener.CurrentValue) * MathF.Max(1f - _bgTweener.CurrentValue, 0.35f);
 						e.rotation = (_logoRotation.CurrentValue * (1f - _bgTweener.CurrentValue));
 
-						// FIXED: Cleaned up the nested layout calculation to perfectly align with the title logic
-						float baseTargetX = ArtMathHelper.Lerp(0.38f, 0.42f, activePanelValue);
-						float currentTargetX = ArtMathHelper.Lerp(baseTargetX, 0.5f, _startTransitionTweener.CurrentValue);
-
-						// Dynamic targets for Listen/Score mode
-						float targetX = ArtMathHelper.Lerp(currentTargetX, currentTargetX - 0.08f, effectiveListenScore);
-						float targetY = ArtMathHelper.Lerp(0.5f, 0.32f, effectiveListenScore);
+						// Position: Logo target X is at 0.2f (3/4 of the cover width, i.e., -0.4f + 0.8f * 0.75f = 0.2f) when cover view is active
+						float currentTargetX = ArtMathHelper.Lerp(0.2f, 0.5f, _startTransitionTweener.CurrentValue);
 
 						float t_shrink = _startShrinkTweener.CurrentValue;
-						float finalY = ArtMathHelper.Lerp(targetY, -0.6f, t_shrink);
 
 						e.alpha = (1f - t_shrink) * (1f - _peekBg) * _introAlpha;
-						e.position = UDim2.Lerp(UDim2.FromScale(0.5f, 0.5f), UDim2.FromScale(targetX, finalY), _bgTweener.CurrentValue);
+						e.position = UDim2.Lerp(UDim2.FromScale(0.5f, 0.5f), UDim2.FromScale(currentTargetX, 0.5f), _bgTweener.CurrentValue);
 					}
 				}
 			};
@@ -356,7 +363,7 @@ namespace CoreGame
 				anchorY = AnchorY.Top,
 				textAnchorX = AnchorX.Left,
 				textAnchorY = AnchorY.Top,
-				position = new UDim2(0f, 0f, 15f, 15f), // 15px inset from the cover's top-left
+				position = new UDim2(0.5f, 0f, 15f, 15f), // 15px inset from the cover's top-left
 				scale = 1.25f,
 				color = Color.White,
 				backgroundColor = new Color(0, 0, 0), // Black badge
@@ -377,7 +384,7 @@ namespace CoreGame
 				anchorY = AnchorY.Bottom,
 				textAnchorX = AnchorX.Left,
 				textAnchorY = AnchorY.Bottom,
-				position = new UDim2(0f, 1f, 15f, -15f), // 15px inset from the cover's bottom-left
+				position = new UDim2(0.5f, 1f, 15f, -15f), // 15px inset from the cover's bottom-left
 				scale = 1.25f,
 				color = Color.White,
 				backgroundColor = new Color(0, 0, 0),
@@ -449,6 +456,25 @@ namespace CoreGame
 
 			// === L2 UI Elements ===
 
+			_playerControlFrame = new Frame
+			{
+				anchorX = AnchorX.Left,
+				anchorY = AnchorY.Top,
+				color = new Color(0, 0, 0, 0), // Transparent container
+				onUpdate = (e, dt) =>
+				{
+					float t_shrink = _startShrinkTweener.CurrentValue;
+
+					// Size: 100px high horizontal bar on menu -> full screen on gameplay start
+					e.size = UDim2.Lerp(new UDim2(1f, 0f, 0f, 100f), new UDim2(1f, 1f, 0f, 0f), t_shrink);
+
+					// Position: slides up from bottom off-screen to bottom on-screen based on _bgTweener.
+					// Then slides to top-left (0,0) in gameplay.
+					UDim2 menuPos = UDim2.Lerp(new UDim2(0f, 1f, 0f, 0f), new UDim2(0f, 1f, 0f, -100f), _bgTweener.CurrentValue);
+					e.position = UDim2.Lerp(menuPos, new UDim2(0f, 0f, 0f, 0f), t_shrink);
+				}
+			};
+
 			// 1. Song Title
 			ArtObject songTitle = new TextFrame
 			{
@@ -463,42 +489,19 @@ namespace CoreGame
 					e.text = _beatmap?.Title ?? "";
 					e.color = new Color((byte)(_currentCoverColor.R * MathF.Max(0.3f, _startTransitionTweener.CurrentValue)), (byte)(_currentCoverColor.G * MathF.Max(0.3f, _startTransitionTweener.CurrentValue)), (byte)(_currentCoverColor.B * MathF.Max(0.3f, _startTransitionTweener.CurrentValue)));
 
-					float activePanelValue = MathF.Max(_settingsTweener.CurrentValue, _modifiersTweener.CurrentValue);
-					float baseTargetX = ArtMathHelper.Lerp(0.38f, 0.42f, activePanelValue);
-					float currentTargetX = ArtMathHelper.Lerp(baseTargetX, 0.5f, _startTransitionTweener.CurrentValue);
-					float effectiveListenScore = _listenScoreTweener.CurrentValue * (1f - activePanelValue);
-
-					// L-swoop: X moves first (0..0.7), Y moves after (0.3..1.0) with overlap zone
-					float rawTx = Math.Clamp(effectiveListenScore / 0.7f, 0f, 1f);
-					float rawTy = Math.Clamp((effectiveListenScore - 0.3f) / 0.7f, 0f, 1f);
-					float tx = 1f - MathF.Pow(1f - rawTx, 2f); // EaseOutQuad — fast rightward sweep
-					float ty = rawTy * rawTy;                    // EaseInQuad  — slow then upward sweep
-
-					// Scale components lerp with the vertical phase
-					float scaleX = ArtMathHelper.Lerp(currentTargetX, currentTargetX - 0.08f, ty);
-					float scaleY = ArtMathHelper.Lerp(0.5f, 0.32f, ty);
-					float offsetX = ArtMathHelper.Lerp(-250f, 210f, tx);
-					float offsetY = ArtMathHelper.Lerp(280f, -60f, ty);
-
-					UDim2 fullScreenPos = new UDim2(0.38f, 0.5f, -250f, 320f);
-					UDim2 coverViewPos  = new UDim2(scaleX, scaleY, offsetX, offsetY);
-					UDim2 normalPos = UDim2.Lerp(fullScreenPos, coverViewPos, _bgTweener.CurrentValue);
-
 					float t_shrink = _startShrinkTweener.CurrentValue;
 
-					// Interpolate position smoothly to top-left area (ScaleX = 0f, ScaleY = 0.22f, OffsetX = 100f * GlobalScale) in Phase 2
+					UDim2 normalPos = new UDim2(0f, 0f, 20f, 15f);
 					UDim2 gameplayPos = new UDim2(0f, 0.22f, 100f * _settings.GlobalScale, 0f);
 					e.position = UDim2.Lerp(normalPos, gameplayPos, t_shrink);
 
-					// Interpolate scale from 2.4f (normal) to 2.7f (slightly enlarged) in Phase 2
 					e.scale = ArtMathHelper.Lerp(2.4f, 2.7f, t_shrink);
-
-					// Title remains visible during gameplay
 					e.alpha = _bgTweener.CurrentValue
 							* (1f - _settingsTweener.CurrentValue * 0.4f)
 							* (1f - _startShrinkTweener.CurrentValue * 0.3f);
 				}
 			};
+			_playerControlFrame.children.Add(songTitle);
 
 			// 2. Artist Name
 			ArtObject songArtist = new TextFrame
@@ -514,85 +517,66 @@ namespace CoreGame
 					e.text = _beatmap?.Artist ?? "";
 					e.color = new Color((byte)(_currentCoverColor.R * MathF.Max(0.6f, _startTransitionTweener.CurrentValue)), (byte)(_currentCoverColor.G * MathF.Max(0.6f, _startTransitionTweener.CurrentValue)), (byte)(_currentCoverColor.B * MathF.Max(0.6f, _startTransitionTweener.CurrentValue)));
 
-					float activePanelValue = MathF.Max(_settingsTweener.CurrentValue, _modifiersTweener.CurrentValue);
-					float baseTargetX = ArtMathHelper.Lerp(0.38f, 0.42f, activePanelValue);
-					float currentTargetX = ArtMathHelper.Lerp(baseTargetX, 0.5f, _startTransitionTweener.CurrentValue);
-					float effectiveListenScore = _listenScoreTweener.CurrentValue * (1f - activePanelValue);
-
-					float rawTx = Math.Clamp(effectiveListenScore / 0.7f, 0f, 1f);
-					float rawTy = Math.Clamp((effectiveListenScore - 0.3f) / 0.7f, 0f, 1f);
-					float tx = 1f - MathF.Pow(1f - rawTx, 2f);
-					float ty = rawTy * rawTy;
-
-					float scaleX = ArtMathHelper.Lerp(currentTargetX, currentTargetX - 0.08f, ty);
-					float scaleY = ArtMathHelper.Lerp(0.5f, 0.32f, ty);
-					float offsetX = ArtMathHelper.Lerp(-250f, 210f, tx);
-					float offsetY = ArtMathHelper.Lerp(325f, -20f, ty);
-
-					UDim2 fullScreenPos = new UDim2(0.38f, 0.5f, -250f, 350f);
-					UDim2 coverViewPos  = new UDim2(scaleX, scaleY, offsetX, offsetY);
-					UDim2 normalPos = UDim2.Lerp(fullScreenPos, coverViewPos, _bgTweener.CurrentValue);
-
 					float t_shrink = _startShrinkTweener.CurrentValue;
 
-					// Interpolate position smoothly to sit right below the title in the top-left area in Phase 2
+					UDim2 normalPos = new UDim2(0f, 0f, 20f, 50f);
 					UDim2 gameplayPos = new UDim2(0f, 0.22f, 100f * _settings.GlobalScale, 55f * _settings.GlobalScale);
 					e.position = UDim2.Lerp(normalPos, gameplayPos, t_shrink);
 
-					// Interpolate scale from 1.8f (normal) to 1.95f (slightly enlarged) in Phase 2
 					e.scale = ArtMathHelper.Lerp(1.8f, 1.95f, t_shrink);
-
-					// Artist remains visible during gameplay
 					e.alpha = _bgTweener.CurrentValue
 							* (1f - _settingsTweener.CurrentValue * 0.4f)
 							* (1f - _startShrinkTweener.CurrentValue * 0.3f);
 				}
 			};
+			_playerControlFrame.children.Add(songArtist);
 
 			// 3. Progress Bar Track
-			Frame progressBarTrack = new Frame
+			Button progressBarTrack = new Button
 			{
 				anchorX = AnchorX.Center,
 				anchorY = AnchorY.Top,
 				color = new Color(80, 80, 80),
-				onUpdate = (e, dt) =>
+				hoverColor = new Color(120, 120, 120),
+				pressedColor = new Color(60, 60, 60),
+				onUpdate = (btn) =>
 				{
-					float activePanelValue = MathF.Max(_settingsTweener.CurrentValue, _modifiersTweener.CurrentValue);
-					float baseTargetX = ArtMathHelper.Lerp(0.38f, 0.42f, activePanelValue);
-					float currentTargetX = ArtMathHelper.Lerp(baseTargetX, 0.5f, _startTransitionTweener.CurrentValue);
-					float effectiveListenScore = _listenScoreTweener.CurrentValue * (1f - activePanelValue);
-
-					float rawTx = Math.Clamp(effectiveListenScore / 0.7f, 0f, 1f);
-					float rawTy = Math.Clamp((effectiveListenScore - 0.3f) / 0.7f, 0f, 1f);
-					float tx = 1f - MathF.Pow(1f - rawTx, 2f);
-					float ty = rawTy * rawTy;
-
-					// anchorX = Center, so offsetX=0 means centered on the scale point
-					float scaleX = ArtMathHelper.Lerp(currentTargetX, currentTargetX - 0.08f, ty);
-					float scaleY = ArtMathHelper.Lerp(0.5f, 0.32f, ty);
-					float offsetX = ArtMathHelper.Lerp(0f, 415f, tx);
-					float offsetY = ArtMathHelper.Lerp(390f, 40f, ty);
-
-					UDim2 fullScreenPos = new UDim2(0.38f, 0.5f, 0f, 410f);
-					UDim2 coverViewPos  = new UDim2(scaleX, scaleY, offsetX, offsetY);
-					UDim2 normalPos = UDim2.Lerp(fullScreenPos, coverViewPos, _bgTweener.CurrentValue);
-
-					float trackWidth = ArtMathHelper.Lerp(500f * _bgTweener.CurrentValue, 410f * _bgTweener.CurrentValue, effectiveListenScore);
-
 					float t_shrink = _startShrinkTweener.CurrentValue;
 
-					// Position: Smoothly center during Phase 1 (via normalPos), then slide up to vertical center in Phase 2
-					e.position = UDim2.Lerp(normalPos, new UDim2(0.5f, 0.5f, 0f, 0f), t_shrink);
+					UDim2 normalPos = new UDim2(0.5f, 0f, 0f, 35f);
+					UDim2 targetPos = (_activeGameplayMode == GameplayMode.Taiko) ? new UDim2(0.5f, 0.5f, 0f, 0f) : new UDim2(0.5f, 1f, 0f, -65f);
+					btn.position = UDim2.Lerp(normalPos, targetPos, t_shrink);
 
-					// Size: Keep normal menu size during Phase 1, then expand to full screen width in Phase 2
-					float targetWidth = 1920f;
-					float targetHeight = 4f * _settings.GlobalScale;
+					float trackWidth = 600f;
+					float targetWidth = (_activeGameplayMode == GameplayMode.Taiko) ? 1920f : trackWidth;
+					float targetHeight = (_activeGameplayMode == GameplayMode.Taiko) ? 4f * _settings.GlobalScale : 6f;
 					float w = ArtMathHelper.Lerp(trackWidth, targetWidth, t_shrink);
 					float h = ArtMathHelper.Lerp(6f, targetHeight, t_shrink);
-					e.size = new UDim2(0f, 0f, w, h);
+					btn.size = new UDim2(0f, 0f, w, h);
 
-					// Smooth bidirectional fade using playfield alpha and t_shrink
-					e.alpha = _bgTweener.CurrentValue * MathF.Max(0f, 1f - _taikofield.alpha * t_shrink);
+					btn.alpha = _bgTweener.CurrentValue * MathF.Max(0f, 1f - GetActivePlayfieldAlpha() * t_shrink);
+
+					// Dragging seeking logic
+					if (btn.IsPressed && !_isDraggingProgressBar && !_isStarting)
+					{
+						_isDraggingProgressBar = true;
+					}
+
+					if (_isDraggingProgressBar)
+					{
+						if (Mouse.LeftDown())
+						{
+							float centerX = btn.position.ScaleX * ScreenWidth + btn.position.OffsetX;
+							float leftX = centerX - w * 0.5f;
+							_dragProgress = Math.Clamp((Mouse.Position.X - leftX) / w, 0f, 1f);
+						}
+						else
+						{
+							_isDraggingProgressBar = false;
+							float totalLength = GetMusicLength(_currentAudioKey);
+							SeekMusic(_currentAudioKey, _dragProgress * totalLength);
+						}
+					}
 				}
 			};
 
@@ -606,18 +590,25 @@ namespace CoreGame
 				color = Color.White,
 				onUpdate = (e, dt) =>
 				{
-					float timePlayed = GetMusicTimePlayed(_currentAudioKey);
-					float totalLength = GetMusicLength(_currentAudioKey);
-					float progress = totalLength > 0 ? timePlayed / totalLength : 0f;
+					float progress = 0f;
+					if (_isDraggingProgressBar)
+					{
+						progress = _dragProgress;
+					}
+					else
+					{
+						float timePlayed = GetMusicTimePlayed(_currentAudioKey);
+						float totalLength = GetMusicLength(_currentAudioKey);
+						progress = totalLength > 0 ? timePlayed / totalLength : 0f;
+					}
 
 					e.size = new UDim2(Math.Clamp(progress, 0f, 1f), 1f, 0f, 0f);
 
 					float t_shrink = _startShrinkTweener.CurrentValue;
-					e.alpha = _bgTweener.CurrentValue * MathF.Max(0f, 1f - _taikofield.alpha * t_shrink) * (1f - t_shrink);
+					e.alpha = _bgTweener.CurrentValue * MathF.Max(0f, 1f - GetActivePlayfieldAlpha() * t_shrink) * (1f - t_shrink);
 				}
 			};
 			progressBarTrack.children.Add(progressBarFill);
-			Add(progressBarTrack);
 
 			// 5. Progress Bar Dot / Handle
 			ArtObject progressBarDot = new CircleFrame
@@ -628,73 +619,40 @@ namespace CoreGame
 				color = Color.White,
 				onUpdate = (e, dt) =>
 				{
-					// 1. Calculate the active progress ratio
-					float timePlayed = GetMusicTimePlayed(_currentAudioKey);
-					float totalLength = GetMusicLength(_currentAudioKey);
-					float progress = totalLength > 0 ? Math.Clamp(timePlayed / totalLength, 0f, 1f) : 0f;
+					float progress = 0f;
+					if (_isDraggingProgressBar)
+					{
+						progress = _dragProgress;
+					}
+					else
+					{
+						float timePlayed = GetMusicTimePlayed(_currentAudioKey);
+						float totalLength = GetMusicLength(_currentAudioKey);
+						progress = totalLength > 0 ? Math.Clamp(timePlayed / totalLength, 0f, 1f) : 0f;
+					}
 
 					UDim2 normalPos = new UDim2(progress, 0.5f, 0.5f, 0f);
 					float t_shrink = _startShrinkTweener.CurrentValue;
 
-					UDim2 targetPos = new UDim2(0f, 0.5f, 300f * _settings.GlobalScale, 0f);
+					UDim2 targetPos = (_activeGameplayMode == GameplayMode.Taiko) ? new UDim2(0f, 0.5f, 300f * _settings.GlobalScale, 0f) : normalPos;
 					e.position = UDim2.Lerp(normalPos, targetPos, t_shrink);
 
 					float normalSize = 20f;
-					float targetSize = 40f * _settings.GlobalScale;
+					float targetSize = (_activeGameplayMode == GameplayMode.Taiko) ? 40f * _settings.GlobalScale : normalSize;
 					float currentSize = ArtMathHelper.Lerp(normalSize, targetSize, t_shrink);
 					e.size = new UDim2(0f, 0f, currentSize, currentSize);
 
-					e.alpha = _bgTweener.CurrentValue * MathF.Max(0f, 1f - _taikofield.alpha * t_shrink);
+					e.alpha = _bgTweener.CurrentValue * MathF.Max(0f, 1f - GetActivePlayfieldAlpha() * t_shrink);
 				}
 			};
 			progressBarTrack.children.Add(progressBarDot);
+			_playerControlFrame.children.Add(progressBarTrack);
 
 			// 6. Time Played Text
 			ArtObject timePlayed = new TextFrame
 			{
 				fontName = "gsans",
-				anchorX = AnchorX.Left,
-				anchorY = AnchorY.Top,
-				textAnchorX = AnchorX.Left,
-				textAnchorY = AnchorY.Top,
-				scale = 1.35f,
-				onUpdate = (e, dt) =>
-				{
-					e.color = new Color((byte)(_currentCoverColor.R * 0.4f), (byte)(_currentCoverColor.G * 0.4f), (byte)(_currentCoverColor.B * 0.4f));
-
-					float activePanelValue = MathF.Max(_settingsTweener.CurrentValue, _modifiersTweener.CurrentValue);
-					float baseTargetX = ArtMathHelper.Lerp(0.38f, 0.42f, activePanelValue);
-					float currentTargetX = ArtMathHelper.Lerp(baseTargetX, 0.5f, _startTransitionTweener.CurrentValue);
-					float effectiveListenScore = _listenScoreTweener.CurrentValue * (1f - activePanelValue);
-
-					float rawTx = Math.Clamp(effectiveListenScore / 0.7f, 0f, 1f);
-					float rawTy = Math.Clamp((effectiveListenScore - 0.3f) / 0.7f, 0f, 1f);
-					float tx = 1f - MathF.Pow(1f - rawTx, 2f);
-					float ty = rawTy * rawTy;
-
-					float scaleX = ArtMathHelper.Lerp(currentTargetX, currentTargetX - 0.08f, ty);
-					float scaleY = ArtMathHelper.Lerp(0.5f, 0.32f, ty);
-					float offsetX = ArtMathHelper.Lerp(-250f, 210f, tx);
-					float offsetY = ArtMathHelper.Lerp(405f, 60f, ty);
-
-					UDim2 fullScreenPos = new UDim2(0.38f, 0.5f, -250f, 425f);
-					UDim2 coverViewPos  = new UDim2(scaleX, scaleY, offsetX, offsetY);
-					UDim2 normalPos = UDim2.Lerp(fullScreenPos, coverViewPos, _bgTweener.CurrentValue);
-
-					float t_shrink = _startShrinkTweener.CurrentValue;
-					e.position = UDim2.Lerp(normalPos, new UDim2(normalPos.ScaleX, normalPos.ScaleY, normalPos.OffsetX, normalPos.OffsetY - 600f), t_shrink);
-					e.alpha = _bgTweener.CurrentValue * (1f - t_shrink);
-
-					float time = GetMusicTimePlayed(_currentAudioKey);
-					e.text = $"{(int)(time / 60)}:{(int)(time % 60):D2}";
-				}
-			};
-
-			// 7. Time Remaining Text
-			ArtObject timeRemaining = new TextFrame
-			{
-				fontName = "gsans",
-				anchorX = AnchorX.Right,
+				anchorX = AnchorX.Right, // Grow outward to the left, away from the progress bar
 				anchorY = AnchorY.Top,
 				textAnchorX = AnchorX.Right,
 				textAnchorY = AnchorY.Top,
@@ -703,26 +661,34 @@ namespace CoreGame
 				{
 					e.color = new Color((byte)(_currentCoverColor.R * 0.4f), (byte)(_currentCoverColor.G * 0.4f), (byte)(_currentCoverColor.B * 0.4f));
 
-					float activePanelValue = MathF.Max(_settingsTweener.CurrentValue, _modifiersTweener.CurrentValue);
-					float baseTargetX = ArtMathHelper.Lerp(0.38f, 0.42f, activePanelValue);
-					float currentTargetX = ArtMathHelper.Lerp(baseTargetX, 0.5f, _startTransitionTweener.CurrentValue);
-					float effectiveListenScore = _listenScoreTweener.CurrentValue * (1f - activePanelValue);
+					float t_shrink = _startShrinkTweener.CurrentValue;
+					float w = ArtMathHelper.Lerp(600f, 1920f, t_shrink);
+					UDim2 normalPos = new UDim2(0.5f, 0f, -w * 0.5f - 15f, 35f);
+					e.position = UDim2.Lerp(normalPos, new UDim2(normalPos.ScaleX, normalPos.ScaleY, normalPos.OffsetX, normalPos.OffsetY - 600f), t_shrink);
+					e.alpha = _bgTweener.CurrentValue * (1f - t_shrink);
 
-					float rawTx = Math.Clamp(effectiveListenScore / 0.7f, 0f, 1f);
-					float rawTy = Math.Clamp((effectiveListenScore - 0.3f) / 0.7f, 0f, 1f);
-					float tx = 1f - MathF.Pow(1f - rawTx, 2f);
-					float ty = rawTy * rawTy;
+					float time = GetMusicTimePlayed(_currentAudioKey);
+					e.text = $"{(int)(time / 60)}:{(int)(time % 60):D2}";
+				}
+			};
+			_playerControlFrame.children.Add(timePlayed);
 
-					float scaleX = ArtMathHelper.Lerp(currentTargetX, currentTargetX - 0.08f, ty);
-					float scaleY = ArtMathHelper.Lerp(0.5f, 0.32f, ty);
-					float offsetX = ArtMathHelper.Lerp(250f, 620f, tx);
-					float offsetY = ArtMathHelper.Lerp(405f, 60f, ty);
-
-					UDim2 fullScreenPos = new UDim2(0.38f, 0.5f, 250f, 425f);
-					UDim2 coverViewPos  = new UDim2(scaleX, scaleY, offsetX, offsetY);
-					UDim2 normalPos = UDim2.Lerp(fullScreenPos, coverViewPos, _bgTweener.CurrentValue);
+			// 7. Time Remaining Text
+			ArtObject timeRemaining = new TextFrame
+			{
+				fontName = "gsans",
+				anchorX = AnchorX.Left, // Grow outward to the right, away from the progress bar
+				anchorY = AnchorY.Top,
+				textAnchorX = AnchorX.Left,
+				textAnchorY = AnchorY.Top,
+				scale = 1.35f,
+				onUpdate = (e, dt) =>
+				{
+					e.color = new Color((byte)(_currentCoverColor.R * 0.4f), (byte)(_currentCoverColor.G * 0.4f), (byte)(_currentCoverColor.B * 0.4f));
 
 					float t_shrink = _startShrinkTweener.CurrentValue;
+					float w = ArtMathHelper.Lerp(600f, 1920f, t_shrink);
+					UDim2 normalPos = new UDim2(0.5f, 0f, w * 0.5f + 15f, 35f);
 					e.position = UDim2.Lerp(normalPos, new UDim2(normalPos.ScaleX, normalPos.ScaleY, normalPos.OffsetX, normalPos.OffsetY - 600f), t_shrink);
 					e.alpha = _bgTweener.CurrentValue * (1f - t_shrink);
 
@@ -732,13 +698,14 @@ namespace CoreGame
 					e.text = $"-{(int)(left / 60)}:{(int)(left % 60):D2}";
 				}
 			};
+			_playerControlFrame.children.Add(timeRemaining);
 
 			// === Playlist Scroll ===
 			ScrollingFrame playlistScroll = new ScrollingFrame
 			{
 				anchorX = AnchorX.Right,
 				anchorY = AnchorY.Top,
-				size = new UDim2(0f, 1f, 510f, -60f),
+				size = new UDim2(0.5f, 1f, 0f, -200f), // shifted down by 40px
 				scrollDirection = Axis.Vertical,
 				showScrollbar = false,
 				scrollbarColor = new Color(255, 255, 255, 100),
@@ -748,25 +715,87 @@ namespace CoreGame
 				alpha = 0f,
 				onUpdate = (e, dt) =>
 				{
-					e.position = UDim2.Lerp(new UDim2(1f, 0f, 510f, 60f), new UDim2(1f, 0f, 0f, 60f), _bgTweener.CurrentValue * (1f - _startTransitionTweener.CurrentValue));
+					e.position = UDim2.Lerp(new UDim2(1.5f, 0f, 0f, 100f), new UDim2(1f, 0f, 0f, 100f), _bgTweener.CurrentValue * (1f - _startTransitionTweener.CurrentValue));
 					// Disable scissor clipping when fully off-screen to prevent MonoGame viewport overlap warnings
-					e.clipMode = (e.position.OffsetX >= 509f) ? ClipMode.None : ClipMode.Clip;
+					e.clipMode = (e.position.ScaleX >= 1.49f) ? ClipMode.None : ClipMode.Clip;
 				}
 			};
+			playlistScroll.modifiers.Add(new ArtFrame.UIModifier.UIListLayout
+			{
+				direction = ArtFrame.UIModifier.Axis.Vertical,
+				spacing = 10f,
+				paddingY = 10f
+			});
 
 			_playlistScroll = playlistScroll;
 			_starRating = GetRealStarRating(_beatmap);
-			_scoreboardPanel = BuildScoreboardUI();
+
+			// === Stationary Playlist Header ===
+			Frame playlistHeader = new Frame
+			{
+				anchorX = AnchorX.Right,
+				anchorY = AnchorY.Top,
+				size = new UDim2(0.5f, 0f, -40f, 35f),
+				color = new Color(0, 0, 0, 0), // transparent
+				onUpdate = (e, dt) =>
+				{
+					e.position = UDim2.Lerp(new UDim2(1.5f, 0f, 0f, 60f), new UDim2(1f, 0f, 0f, 60f), _bgTweener.CurrentValue * (1f - _startTransitionTweener.CurrentValue));
+				}
+			};
+
+			playlistHeader.children.Add(new TextFrame
+			{
+				text = "#",
+				fontName = "gsans_bold",
+				position = new UDim2(0f, 0.5f, 15f, 0f),
+				anchorX = AnchorX.Left,
+				anchorY = AnchorY.Center,
+				textAnchorX = AnchorX.Center,
+				textAnchorY = AnchorY.Center,
+				scale = 1.0f,
+				color = Color.White
+			});
+
+			playlistHeader.children.Add(new TextFrame
+			{
+				text = "Title / Song",
+				fontName = "gsans_bold",
+				position = new UDim2(0f, 0.5f, 120f, 0f),
+				anchorX = AnchorX.Left,
+				anchorY = AnchorY.Center,
+				textAnchorX = AnchorX.Left,
+				textAnchorY = AnchorY.Center,
+				scale = 1.0f,
+				color = Color.White
+			});
+
+			playlistHeader.children.Add(new Frame
+			{
+				position = new UDim2(0f, 1f, 0f, 0f),
+				size = new UDim2(1f, 0f, 0f, 1f), // 1px separator line
+				anchorX = AnchorX.Left,
+				anchorY = AnchorY.Bottom,
+				color = new Color(255, 255, 255, 40)
+			});
+
+			// === Initialize Video Frame ===
+			_bgVideoFrame = new VideoFrame
+			{
+				size = new UDim2(1f, 1f),
+				position = new UDim2(0.5f, 0.5f),
+				anchorX = AnchorX.Center,
+				anchorY = AnchorY.Center,
+				fit = ObjectFit.Cover,
+				skipDraw = true
+			};
 
 			// --- Drawing Index ---
 			Add(bgDrop);
+			Add(_bgVideoFrame);
 
-			Add(songTitle);
-			Add(songArtist);
+			Add(_playerControlFrame);
+			Add(playlistHeader);
 			Add(playlistScroll);
-			Add(timeRemaining);
-			Add(timePlayed);
-			Add(progressBarTrack);
 
 			Add(_blurBgUI);
 			Add(_welcomeTransition); // Renders over the background but behind the logo
@@ -776,14 +805,32 @@ namespace CoreGame
 
 			Add(BuildSettingsUI());
 			Add(BuildModifiersUI());
+			Add(BuildAccountUI());
 			Add(BuildTopbarUI());
-			//Add(_scoreboardPanel);
-			//RefreshScoreboard(_scoreboardPanel);
 
 			// Initialize and add the WIP Warning Screen on top of everything!
-			SetupWarningScreen();
+			if (_showWarningScreen)
+			{
+				SetupWarningScreen();
+			}
+			else
+			{
+				_inWarningScreen = false;
+			}
 
 			Add(_taikofield);
+			Add(_stackfield);
+
+			_resultscreen = new ResultScreen
+			{
+				OnRetry = RestartGameplay,
+				OnQuit = () =>
+				{
+					_inResultScreen = false;
+					exitGameplay();
+				}
+			};
+			Add(_resultscreen);
 
 			// Populate Playlist
 			RepopulatePlaylist();
@@ -803,7 +850,7 @@ namespace CoreGame
 
 					if (_logoUI.IsHovered)
 					{
-						PlaySFX(_rythmIndexer.IsDownbeat ? "dwbeat" : "beat");
+						PlaySFX("beat");
 					}
 					
 					// Spawn a logo shockwave on downbeats (Number 4)
@@ -835,7 +882,10 @@ namespace CoreGame
 			// Setup Welcome intro audio (we will play it after warning screen fades out!)
 			// _inWarningScreen = false;
 			LoadMusic("welcome", "sounds/sfxs/welcome.wav");
-			// PlayMusic("welcome");
+			if (!_showWarningScreen)
+			{
+				PlayMusic("welcome");
+			}
 			SetMusicVolume("welcome", _targetVolume);
  
 			// Load and pause the selected beatmap preview audio

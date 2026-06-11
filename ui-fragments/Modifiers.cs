@@ -1,9 +1,7 @@
 using ArtFrame;
 using ArtFrame.ArtTypes;
-using ArtFrame.Easings;
 using ArtFrame.UIModifier;
 using ArtFrame.UserInterface;
-using System;
 
 namespace CoreGame
 {

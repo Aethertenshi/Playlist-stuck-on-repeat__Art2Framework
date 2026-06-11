@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
@@ -9,6 +9,8 @@
     <ApplicationIcon>PSoR.ico</ApplicationIcon>
     <!-- Prevents NETSDK1152 when shared files (FNA.dll, shaders) appear from both projects -->
     <ErrorOnDuplicatePublishOutputFiles>false</ErrorOnDuplicatePublishOutputFiles>
+    <!-- Exclude the Node.js API project from C# compilation -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);playlist-api\**</DefaultItemExcludes>
   </PropertyGroup>
 
   <ItemGroup>

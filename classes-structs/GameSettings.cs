@@ -11,6 +11,7 @@ namespace CoreGame
         public float GlobalScale { get; set; } = 1.4f;
 
         // Graphics and Performance Configuration
+        public bool EnableCanvasMovie { get; set; } = false;
         public bool Fullscreen { get; set; } = false;
         public int GameplayFps { get; set; } = 250;
         public int MenuFps { get; set; } = 120;
@@ -26,6 +27,5 @@ namespace CoreGame
         public string KeyHitLeft2 { get; set; } = "W";
         public string KeyHitRight1 { get; set; } = "O";
         public string KeyHitRight2 { get; set; } = "P";
-        public string KeyToggleListenScore { get; set; } = "LeftShift";
     }
 }

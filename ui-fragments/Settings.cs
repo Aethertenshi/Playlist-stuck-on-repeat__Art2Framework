@@ -160,6 +160,7 @@ namespace CoreGame
                             onValueChanges = (e) =>
                             {
                                 _effectsVolume = e.currentValue;
+                                SetSFXVolume("play-click", _effectsVolume);
                                 SetSFXVolume("hover", e.currentValue);
                                 SetSFXVolume("select", e.currentValue);
                                 SetSFXVolume("beat", e.currentValue);
@@ -235,8 +236,6 @@ namespace CoreGame
 
             if (currentPage != "" && currentPage == "Key Bindings")
             {
-                settingsPanel.children.Add(CreateKeybindRow("ListenScore", "Toggle Listen Score", _settingsYOffset, () => _keyToggleListenScore, (val) => _keyToggleListenScore = val));
-                _settingsYOffset += 60f;
                 settingsPanel.children.Add(CreateKeybindRow("ToggleCover", "Menu Space Toggle", _settingsYOffset, () => _keyToggleCover, (val) => _keyToggleCover = val));
                 _settingsYOffset += 60f;
                 settingsPanel.children.Add(CreateKeybindRow("StartGame", "Start/Play Song Key", _settingsYOffset, () => _keyStartGame, (val) => _keyStartGame = val));
@@ -300,6 +299,10 @@ namespace CoreGame
                                 {
                                     _taikofield.ScrollSpeed = e.currentValue;
                                 }
+                                if (_stackfield != null)
+                                {
+                                    _stackfield.ScrollSpeed = e.currentValue;
+                                }
                                 SaveSettings();
                             }
                         }
@@ -350,6 +353,10 @@ namespace CoreGame
                                 {
                                     _taikofield.GlobalScale = e.currentValue;
                                 }
+                                if (_stackfield != null)
+                                {
+                                    _stackfield.GlobalScale = e.currentValue;
+                                }
                                 SaveSettings();
                             }
                         }
@@ -366,6 +373,14 @@ namespace CoreGame
                     (val) => {
                         _settings.Fullscreen = val;
                         ConfigureWindow(DefaultScreenWidth, DefaultScreenHeight, "Playlist Stuck on Repeat", val);
+                    }));
+                _settingsYOffset += 60f;
+
+                // --- Enable Canvas Movie Toggle ---
+                settingsPanel.children.Add(CreateToggleRow("Enable Canvas Movie", _settingsYOffset, 
+                    () => _settings.EnableCanvasMovie, 
+                    (val) => {
+                        _settings.EnableCanvasMovie = val;
                     }));
                 _settingsYOffset += 60f;
 

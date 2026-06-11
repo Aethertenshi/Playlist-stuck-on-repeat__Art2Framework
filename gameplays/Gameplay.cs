@@ -57,6 +57,8 @@ namespace CoreGame
         public Action? OnPlayHoldTick;
         public Action? OnSplitFinished;
 
+        public bool IsGameplayFinished => _notes != null && _notes.Length > 0 && _firstActiveIndex >= _notes.Length;
+
         // --- Visuals & Nodes ---
         private readonly Image _circleTexture;
         private readonly string _fontName;
@@ -88,7 +90,7 @@ namespace CoreGame
         private TextFrame _comboUI;
         private TextFrame _modeUI;
 
-        private float BaseNoteScale = 40f;
+        private float BaseNoteScale = 60f;
         private float BaseJudgementOffsetX = 300f;
         private float CurvatureExponent = 0.25f;
 
@@ -97,8 +99,6 @@ namespace CoreGame
         private ImageFrame[] _visualPool = new ImageFrame[MaxVisualPool];
         private bool[] _visualPoolInUse = new bool[MaxVisualPool];
 
-
-
         private const int MaxFloatingText = 50;
         private FloatingText[] _floatingTexts = new FloatingText[MaxFloatingText];
 
@@ -106,24 +106,11 @@ namespace CoreGame
         private GameplayNote[] _notes = new GameplayNote[0];
         private int _firstActiveIndex = 0;
         private int _nextSpawnIndex = 0;
+        private readonly long[] _framePressTimestamps = new long[32];
+        public float MusicSpeedMultiplier { get; set; } = 1.0f;
         //private const float PreemptTime = 2000f; // Defines how early notes spawn visually
 
-        // --- Hit Error Bar & Unstable Rate ---
-        private Frame _hitErrorBarBg = null!;
-        private Frame _hitErrorBarOk = null!;
-        private Frame _hitErrorBarGood = null!;
-        private Frame _hitErrorBarPerfect = null!;
-        private Frame _avgIndicator = null!;
-        private TextFrame _urText = null!;
 
-        private const int MaxHitTicks = 64;
-        private HitErrorTick[] _hitTicks = new HitErrorTick[MaxHitTicks];
-        //private Frame[] _hitTickVisuals = new Frame[MaxHitTicks];
-
-        // High performance UR tracking
-        private double[] _hitErrors = new double[1000];
-        private int _hitErrorCount = 0;
-        private double _rollingAverageError = 0f;
 
         // Input state tracking
         private bool[] _previousKeyStates;
@@ -164,31 +151,10 @@ namespace CoreGame
                 children.Add(_visualPool[i]);
             }
 
-            // 3. Build Hit Error Bar
-            _hitErrorBarBg = new Frame { color = new Color(20, 20, 20, 160), anchorX = AnchorX.Center, anchorY = AnchorY.Center };
-            _hitErrorBarOk = new Frame { color = new Color(255, 150, 50, 60), anchorX = AnchorX.Center, anchorY = AnchorY.Center };
-            _hitErrorBarGood = new Frame { color = new Color(50, 220, 100, 100), anchorX = AnchorX.Center, anchorY = AnchorY.Center };
-            _hitErrorBarPerfect = new Frame { color = new Color(50, 150, 255, 160), anchorX = AnchorX.Center, anchorY = AnchorY.Center };
-            _avgIndicator = new Frame { color = Color.White, anchorX = AnchorX.Center, anchorY = AnchorY.Center, alpha = 0f };
-            _urText = new TextFrame { fontName = _fontName, text = "UR: --", color = new Color(220, 220, 220, 255), anchorX = AnchorX.Center, anchorY = AnchorY.Bottom, textAnchorX = AnchorX.Center, textAnchorY = AnchorY.Bottom, scale = 1.0f };
 
-            _hitErrorBarBg.children.Add(_hitErrorBarOk);
-            _hitErrorBarBg.children.Add(_hitErrorBarGood);
-            _hitErrorBarBg.children.Add(_hitErrorBarPerfect);
-
-            // Pre-allocate tick visuals
-            //for (int i = 0; i < MaxHitTicks; i++)
-            //{
-            //    _hitTickVisuals[i] = new Frame { anchorX = AnchorX.Center, anchorY = AnchorY.Center, alpha = 0f };
-            //    _hitErrorBarBg.children.Add(_hitTickVisuals[i]);
-            //}
-
-            _hitErrorBarBg.children.Add(_avgIndicator);
-            _hitErrorBarBg.children.Add(_urText);
-            children.Add(_hitErrorBarBg);
         }
 
-        public void LoadBeatmap(OsuBeatmap beatmap)
+        public void LoadBeatmap(OsuBeatmap? beatmap)
         {
             _activeBeatmap = null; // Clear reference for GC before loading new map
             if (beatmap == null) return;
@@ -307,9 +273,6 @@ namespace CoreGame
             for (int i = 0; i < MaxVisualPool; i++) { _visualPoolInUse[i] = false; _visualPool[i].alpha = 0f; }
             for (int i = 0; i < MaxFloatingText; i++) { _floatingTexts[i].Alpha = 0f; }
 
-            _hitErrorCount = 0;
-            _rollingAverageError = 0f;
-            _urText.text = "UR: --";
             _judgementRingScale = 1.0f;
         }
 
@@ -320,7 +283,6 @@ namespace CoreGame
             // Compute Kiai state
             _isKiaiActive = false;
             _kiaiScale = 1.0f;
-            /* Uncomment to restore Kiai logic
             if (_activeBeatmap != null)
             {
                 var activePoint = _activeBeatmap.GetTimingPointAt(currentAudioTimeMs);
@@ -338,7 +300,6 @@ namespace CoreGame
                     }
                 }
             }
-            */
 
             // 1. Transitions
             if (_introAlpha < 1f)
@@ -404,7 +365,7 @@ namespace CoreGame
             _scoreUI.scale = 2f * GlobalScale;
             _comboUI.scale = 1.8f * GlobalScale;
 
-            UpdateHitErrorBar(dt);
+
 
             if (Keyboard.IsKeyPressed(ExitKey)) { OnExit?.Invoke(); return; }
 
@@ -467,22 +428,27 @@ namespace CoreGame
                 //    _previousKeyStates[k] = isDown;
                 //}
 
-                int inputsThisFrame = RealTimeInputEngine.ConsumePressCount();
-
-                while (inputsThisFrame > 0)
+                long frameStartStopwatchMs = RealTimeInputEngine.GetCurrentTimestampMs();
+                int inputsThisFrame = RealTimeInputEngine.ConsumePressTimestamps(_framePressTimestamps);
+ 
+                for (int k = 0; k < inputsThisFrame; k++)
                 {
+                    long pressStopwatchMs = _framePressTimestamps[k];
+                    float elapsedSincePress = (float)(frameStartStopwatchMs - pressStopwatchMs);
+                    float inputAudioTimeMs = currentAudioTimeMs - (elapsedSincePress * MusicSpeedMultiplier);
+ 
                     _judgementRingScale = 1.3f;
-
+ 
                     int targetIndex = -1;
                     float minDiff = float.MaxValue;
-
+ 
                     // Replaced LINQ with fast direct array scan
                     for (int i = _firstActiveIndex; i < _nextSpawnIndex; i++)
                     {
                         ref var n = ref _notes[i];
                         if (n.IsActive && !n.IsProcessed && !n.IsHolding)
                         {
-                            float diff = Math.Abs((float)(n.TargetTimeMs - currentAudioTimeMs));
+                            float diff = Math.Abs((float)(n.TargetTimeMs - inputAudioTimeMs));
                             if (diff <= Window50 && diff < minDiff)
                             {
                                 minDiff = diff;
@@ -490,12 +456,12 @@ namespace CoreGame
                             }
                         }
                     }
-
+ 
                     if (targetIndex != -1)
                     {
                         ref var targetNote = ref _notes[targetIndex];
                         if (SingleMode) _isHoldMode = targetNote.IsHold;
-
+ 
                         if (targetNote.IsHold != _isHoldMode)
                         {
                             targetNote.IsProcessed = true; targetNote.IsHit = false; HitsMiss++;
@@ -506,12 +472,11 @@ namespace CoreGame
                         }
                         else
                         {
-                            float signedError = (float)currentAudioTimeMs - (float)targetNote.TargetTimeMs;
-                            AddHitError(signedError);
-
+                            float signedError = inputAudioTimeMs - (float)targetNote.TargetTimeMs;
+ 
                             if (targetNote.IsHold)
                             {
-                                targetNote.IsHolding = true; targetNote.HoldLastTickTime = currentAudioTimeMs;
+                                targetNote.IsHolding = true; targetNote.HoldLastTickTime = inputAudioTimeMs;
                                 OnPlayHitSound?.Invoke(targetNote.HitSoundMask);
                                 Combo++; Score += 150 * Combo;
                                 _scoreUI.text = Score.ToString(); _comboUI.text = $"{Combo}x";
@@ -523,11 +488,11 @@ namespace CoreGame
                                 targetNote.IsProcessed = true; targetNote.IsHit = true;
                                 float error = Math.Abs(signedError);
                                 int hitValue = 0; Color hitColor = Color.White;
-
+ 
                                 if (error <= Window300) { hitValue = 300; hitColor = new Color(50, 200, 255); HitsPerfect++; }
                                 else if (error <= Window100) { hitValue = 100; hitColor = new Color(100, 255, 100); HitsGood++; }
                                 else if (error <= Window50) { hitValue = 50; hitColor = new Color(255, 150, 50); HitsOk++; }
-
+ 
                                 Combo++; Score += hitValue * Combo;
                                 _scoreUI.text = Score.ToString(); _comboUI.text = $"{Combo}x";
                                 OnPlayHitSound?.Invoke(targetNote.HitSoundMask);
@@ -537,7 +502,6 @@ namespace CoreGame
                             }
                         }
                     }
-                    inputsThisFrame--;
                 }
             }
 
@@ -839,7 +803,7 @@ namespace CoreGame
         }
 
         // --- Optimized Subroutines ---
-        private void SpawnFloatingText(string text, Color color, Vector2 velocity, float startX, float startY, float scale = 1.8f)
+        private void SpawnFloatingText(string text, Color color, Vector2 velocity, float startX, float startY, float scale = 1f)
         {
             for (int i = 0; i < MaxFloatingText; i++)
             {
@@ -854,83 +818,6 @@ namespace CoreGame
                     _floatingTexts[i].PositionOffset = Vector2.Zero;
                     _floatingTexts[i].Alpha = 1.5f;
                     break;
-                }
-            }
-        }
-
-        private void AddHitError(float errorMs)
-        {
-            errorMs = Math.Clamp(errorMs, -Window50, Window50);
-
-            _hitErrors[_hitErrorCount % _hitErrors.Length] = errorMs;
-            _hitErrorCount++;
-
-            int count = Math.Min(_hitErrorCount, 20);
-            double sum = 0;
-            for (int i = 0; i < count; i++) sum += _hitErrors[(_hitErrorCount - 1 - i) % _hitErrors.Length];
-            _rollingAverageError = sum / count;
-
-            int stdCount = Math.Min(_hitErrorCount, _hitErrors.Length);
-            if (stdCount > 1)
-            {
-                double mean = 0;
-                for (int i = 0; i < stdCount; i++) mean += _hitErrors[i];
-                mean /= stdCount;
-
-                double variance = 0;
-                for (int i = 0; i < stdCount; i++) variance += (_hitErrors[i] - mean) * (_hitErrors[i] - mean);
-                variance /= stdCount;
-
-                _urText.text = $"UR: {(Math.Sqrt(variance) * 10.0):F2}";
-            }
-
-            for (int i = 0; i < MaxHitTicks; i++)
-            {
-                if (_hitTicks[i].Alpha <= 0f)
-                {
-                    _hitTicks[i].LocalError = errorMs;
-                    _hitTicks[i].Alpha = 1.0f;
-
-                    float absErr = Math.Abs(errorMs);
-                    Color tCol = new Color(255, 150, 50);
-                    if (absErr <= Window300) tCol = new Color(50, 200, 255);
-                    else if (absErr <= Window100) tCol = new Color(100, 255, 100);
-
-                    //_hitTickVisuals[i].color = tCol;
-                    break;
-                }
-            }
-        }
-
-        private void UpdateHitErrorBar(float dt)
-        {
-            float barW = 320f * GlobalScale;
-            float barH = 8f * GlobalScale;
-
-            _hitErrorBarBg.size = new UDim2(0f, 0f, barW, barH);
-            _hitErrorBarBg.position = new UDim2(0.5f, 0f, 0.85f, 0f);
-            _hitErrorBarBg.alpha = this.alpha;
-
-            _hitErrorBarOk.size = new UDim2(1f, 0f, 1f, 0f);
-            _hitErrorBarGood.size = new UDim2(Window100 / Window50, 0f, 1f, 0f);
-            _hitErrorBarPerfect.size = new UDim2(Window300 / Window50, 0f, 1f, 0f);
-
-            _avgIndicator.size = new UDim2(0f, 0f, 2f * GlobalScale, 18f * GlobalScale);
-            _avgIndicator.position = new UDim2(0.5f, 0.5f, (float)(_rollingAverageError / Window50) * (barW * 0.5f), 0f);
-            _avgIndicator.alpha = _hitErrorCount > 0 ? this.alpha : 0f;
-
-            _urText.position = new UDim2(0.5f, 0f, 0f, -8f * GlobalScale);
-            _urText.scale = 0.9f * GlobalScale;
-            _urText.alpha = this.alpha;
-
-            for (int i = 0; i < MaxHitTicks; i++)
-            {
-                if (_hitTicks[i].Alpha > 0)
-                {
-                    _hitTicks[i].Alpha -= dt * 0.5f;
-                    //_hitTickVisuals[i].alpha = Math.Max(0, _hitTicks[i].Alpha) * this.alpha;
-                    //_hitTickVisuals[i].size = new UDim2(0f, 0f, 2f * GlobalScale, 16f * GlobalScale);
-                    //_hitTickVisuals[i].position = new UDim2(0.5f, 0.5f, (_hitTicks[i].LocalError / Window50) * (barW * 0.5f), 0f);
                 }
             }
         }
@@ -974,11 +861,7 @@ namespace CoreGame
             public float Alpha;
         }
 
-        private struct HitErrorTick
-        {
-            public float LocalError;
-            public float Alpha;
-        }
+
 
         private struct FloatingText
         {

@@ -7,6 +7,7 @@ using OsuLib;
 using System.Text.Json;
 
 using static ArtFrame.AudioHelper;
+using static ArtFrame.FontHelper;
 using static ArtFrame.GraphicsHelper;
 using static ArtFrame.InputHelper;
 using static ArtFrame.SpriteHelper;
@@ -20,6 +21,15 @@ namespace CoreGame
         // --- Custom Game Loop for State Management ---
         public void Update(float dt)
         {
+            _currentDt = dt;
+            if (_bgVideoFrame != null && !_bgVideoFrame.skipDraw && _bgVideoFrame.PlaybackState == VideoPlaybackState.Playing)
+            {
+                _bgDrop.alpha = MathF.Max(0f, _bgDrop.alpha - dt * 2.0f);
+            }
+            if (_resultscreen != null)
+            {
+                _resultscreen.CoverColor = _currentCoverColor;
+            }
             if (Keyboard.IsKeyPressed(Keys.D0))
             {
                 ShowPerformanceTelemetry = !ShowPerformanceTelemetry;
@@ -40,6 +50,26 @@ namespace CoreGame
                 UpdateWarningScreen(dt);
                 return;
             }
+
+            // if (_inResultScreen)
+            // {
+            //     // Update audio crossfades
+            //     var crossKeys = _audioTweeners.Keys.ToList();
+            //     foreach (var key in crossKeys)
+            //     {
+            //         var tweener = _audioTweeners[key];
+            //         if (tweener.IsPlaying)
+            //             SetMusicVolume(key, tweener.CurrentValue);
+            //         else if (tweener.CurrentValue <= 0f && key != _currentAudioKey)
+            //         {
+            //             _audioTweeners.Remove(key);
+            //             Remove(tweener);
+            //             StopMusic(key);
+            //             UnloadMusic(key);
+            //         }
+            //     }
+            //     return;
+            // }
 
             // --- Customizable Hold-to-Exit Logic (like osu!) ---
             if (!_inIntro && !_isStarting && !_isListeningForKey)
@@ -82,7 +112,7 @@ namespace CoreGame
                     if (progress >= 0.87f && !_transitionFired)
                     {
                         _transitionFired = true;
-                        _welcomeTransition.Play(2.7f, Easing.Exponential, Direction.Out);
+                        _welcomeTransition.Play(2.7f, Easing.Fluid, Direction.Out);
                         _logoRotation.Start(1.5f, 0f, -3.7f, Easing.Exponential, Direction.Out); // Smooth elegant rotation alignment
 
                         // Spawn a single, extremely soft pure white ripple ring (calm ripple effect)
@@ -183,13 +213,6 @@ namespace CoreGame
                 _peekBg = ArtMathHelper.Lerp(_peekBg, 0f, dt * 10f);
             }
 
-            // --- Toggle Listen Score View ---
-            if (!_isStarting && Keyboard.IsKeyPressed(_keyToggleListenScore) && _isCoverView && !_isListeningForKey && !Mouse.RightDown())
-            {
-                _isListenScoreMode = !_isListenScoreMode;
-                _listenScoreTweener.Restart(duration: 0.7f, targetValue: _isListenScoreMode ? 1.0f : 0f, Easing.Fluid, Direction.Out);
-                PlaySFX("select");
-            }
 
             // --- Game Start Sequence (Press TAB) ---
             if (!_isStarting && Keyboard.IsKeyPressed(_keyStartGame) && _isCoverView && !_isListeningForKey && !Mouse.RightDown())
@@ -199,31 +222,22 @@ namespace CoreGame
 
                 PlaySFX("play-click"); // Optional feedback
                 _isStarting = true;
+                _isLowPassEnabled = true;
                 _startTimer = 0f;
 
-                // 1. Force close any open side panels and Listen/Score mode
+                // 1. Force close any open side panels
                 _settingsTweener.Restart(0.5f, 0f, Easing.Exponential, Direction.Out);
                 _modifiersTweener.Restart(0.5f, 0f, Easing.Exponential, Direction.Out);
                 
-                bool hadListenScore = _isListenScoreMode;
-                _isListenScoreMode = false;
-                _listenScoreTweener.Restart(0.5f, 0f, Easing.Exponential, Direction.Out);
+                _startPhase = 1;
+                // Trigger Phase 1 immediately
+                _startTransitionTweener.Restart(1.1f, 1.0f, Easing.Fluid, Direction.Out);
+                _lowPassTweener.Restart(1.1f, 1.0f, Easing.Fluid, Direction.Out);
 
-                if (hadListenScore)
-                {
-                    _startPhase = 0; // Wait 0.5 seconds for centering first
-                }
-                else
-                {
-                    _startPhase = 1;
-                    // Trigger Phase 1 immediately
-                    _startTransitionTweener.Restart(1.1f, 1.0f, Easing.Exponential, Direction.Out);
-
-                    // Under-water effect: turn down volume a bit and muffle music
-                    if (_audioTweeners.ContainsKey(_currentAudioKey))
-                        _audioTweeners[_currentAudioKey].Restart(1.1f, _targetVolume * 0.6f, Easing.Exponential, Direction.Out);
-                    SetMusicLowPass(_currentAudioKey, true, 500f);
-                }
+                // Under-water effect: turn down volume a bit and muffle music
+                if (_audioTweeners.ContainsKey(_currentAudioKey))
+                    _audioTweeners[_currentAudioKey].Restart(1.1f, _targetVolume * 0.6f, Easing.Exponential, Direction.Out);
+                SetMusicLowPass(_currentAudioKey, _isLowPassEnabled, 20000f);
             }
 
             // --- Starting Gameplay ---
@@ -231,30 +245,142 @@ namespace CoreGame
             {
                 _isStarting = false;
                 _startTimer = 0f;
-                _startShrinkTweener.Restart(1f, 0f, Easing.Exponential, Direction.Out);
-                _startTransitionTweener.Restart(1.5f, 0f, Easing.Exponential, Direction.Out);
+                _startShrinkTweener.Restart(1f, 0f, Easing.Fluid, Direction.Out);
+                _startTransitionTweener.Restart(1.5f, 0f, Easing.Fluid, Direction.Out);
+                _lowPassTweener.Restart(1f, 0f, Easing.Exponential, Direction.In);
 
                 if (_audioTweeners.ContainsKey(_currentAudioKey))
                     _audioTweeners[_currentAudioKey].Restart(0.5f, _targetVolume, Easing.Exponential, Direction.Out);
 
                 SetPerformanceMode(_settings.MenuFps);
                 Engine.HighPrecisionLimiter.SetMaxFps(_settings.MenuFps);
-
-                SetMusicLowPass(_currentAudioKey, false);
             }
+            
+            // Low Pass Update
+            if (!_isStarting && _lowPassTweener.IsPlaying && _isLowPassEnabled)
+            {
+                float cutoff = ArtMathHelper.Lerp(20000f, 300f, _lowPassTweener.CurrentValue);
+                SetMusicLowPass(_currentAudioKey, _isLowPassEnabled, cutoff);
+            }
+            if (_isLowPassEnabled && !_lowPassTweener.IsPlaying && !_isStarting)
+            {
+                _isLowPassEnabled = false;
+                SetMusicLowPass(_currentAudioKey, _isLowPassEnabled);
+
+                Console.WriteLine("LowPass Disabled");
+            }
+
+            // --- Background Video Sync & Playback ---
+            if (_bgVideoFrame != null)
+            {
+                if (_videoSeekCooldown > 0f)
+                {
+                    _videoSeekCooldown -= dt;
+                }
+
+                if ((_startPhase == 2 || _startPhase == 3) && _settings.EnableCanvasMovie && _beatmap != null && !string.IsNullOrEmpty(_bgVideoFilename))
+                {
+                    bool musicPlaying = IsMusicPlaying(_currentAudioKey) && _startPhase == 3;
+                    float musicTime = _startPhase == 3 ? GetMusicTimePlayed(_currentAudioKey) : 0f;
+                    double videoOffsetMs = _beatmap.GetVideoOffsetMs();
+                    double targetVidMs = (musicTime * 1000.0) - videoOffsetMs;
+
+                    if (targetVidMs >= 0)
+                    {
+                        if (_bgVideoFrame.skipDraw && _startPhase == 3)
+                        {
+                            _bgVideoFrame.skipDraw = false;
+                            _bgVideoFrame.Volume = 0f;
+                        }
+
+                        if (_bgVideoFrame.PlaybackState == VideoPlaybackState.Stopped)
+                        {
+                            _bgVideoFrame.Play(_bgVideoFilename);
+                            _bgVideoFrame.PositionMs = (long)targetVidMs;
+                            _videoSeekCooldown = 1.5f; // Prevent seeking during initial player buffering
+                        }
+
+                        if (musicPlaying)
+                        {
+                            if (_bgVideoFrame.PlaybackState != VideoPlaybackState.Playing)
+                            {
+                                _bgVideoFrame.Resume();
+                            }
+
+                            // Sync playback rate to music speed
+                            if (Math.Abs(_bgVideoFrame.PlaybackRate - _actualMusicSpeed) > 0.01f)
+                            {
+                                _bgVideoFrame.PlaybackRate = _actualMusicSpeed;
+                            }
+
+                            // Sync position if it drifts by more than 500ms and seek cooldown has expired
+                            if (_videoSeekCooldown <= 0f)
+                            {
+                                long actualVidMs = _bgVideoFrame.PositionMs;
+                                if (Math.Abs(actualVidMs - targetVidMs) > 500.0)
+                                {
+                                    _bgVideoFrame.PositionMs = (long)targetVidMs;
+                                    _videoSeekCooldown = 1.5f; // Set cooldown after a hard seek
+                                }
+                            }
+                        }
+                        else
+                        {
+                            // Music is paused, not started yet, or we are in phase 2 pre-load
+                            if (_bgVideoFrame.PlaybackState == VideoPlaybackState.Playing)
+                            {
+                                _bgVideoFrame.Pause();
+                            }
+
+                            // Sync initial/pause position only if drift is significant to avoid continuous seeks
+                            if (_videoSeekCooldown <= 0f)
+                            {
+                                long actualVidMs = _bgVideoFrame.PositionMs;
+                                if (Math.Abs(actualVidMs - targetVidMs) > 200.0)
+                                {
+                                    _bgVideoFrame.PositionMs = (long)targetVidMs;
+                                    _videoSeekCooldown = 1.0f;
+                                }
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // Video hasn't reached start time yet
+                        if (!_bgVideoFrame.skipDraw)
+                        {
+                            _bgVideoFrame.Stop();
+                            _bgVideoFrame.skipDraw = true;
+                        }
+                    }
+                }
+                else
+                {
+                    // Video is disabled or not in gameplay phase
+                    if (!_bgVideoFrame.skipDraw)
+                    {
+                        _bgVideoFrame.Stop();
+                        _bgVideoFrame.skipDraw = true;
+                    }
+                }
+            }
+
             if (_isStarting)
             {
                 _startTimer += dt;
 
+                // During Phase 1, sweep low-pass cutoff down smoothly
+                if (_startPhase == 1)
+                {
+                    float cutoff = ArtMathHelper.Lerp(20000f, 300f, _lowPassTweener.CurrentValue);
+                    SetMusicLowPass(_currentAudioKey, true, cutoff);
+                }
                 // During Phase 2 (The Shrink), sweep low-pass down and fade volume to 0 following the shrink tweener
-                if (_startPhase == 2)
+                else if (_startPhase == 2)
                 {
                     float t = _startShrinkTweener.CurrentValue;
                     float vol = (_targetVolume * 0.45f) * (1f - t);
                     SetMusicVolume(_currentAudioKey, vol);
-
-                    float cutoff = ArtMathHelper.Lerp(500f, 100f, t);
-                    SetMusicLowPass(_currentAudioKey, true, cutoff);
                 }
 
                 // Wait 0.5 seconds in Phase 0 (for centering) then trigger Phase 1
@@ -265,15 +391,50 @@ namespace CoreGame
 
                     // Trigger Phase 1 (UI Fades out, Cover slides to center, bgDrop darkens)
                     _startTransitionTweener.Restart(1.6f, 1.0f, Easing.Fluid, Direction.InOut);
+                    _lowPassTweener.Restart(1.6f, 1.0f, Easing.Exponential, Direction.Out);
 
                     // Under-water effect: turn down volume a bit and muffle music
                     if (_audioTweeners.ContainsKey(_currentAudioKey))
                         _audioTweeners[_currentAudioKey].Restart(1.5f, _targetVolume * 0.5f, Easing.Exponential, Direction.Out);
-                    SetMusicLowPass(_currentAudioKey, true, 750f);
+                    _isLowPassEnabled = true;
+                    SetMusicLowPass(_currentAudioKey, _isLowPassEnabled, 20000f);
                 }
                 // Wait 1.5 seconds, then trigger Phase 2 (The Shrink)
                 else if (_startPhase == 1 && _startTimer >= 1.3f)
                 {
+                    _bgVideoFilename = "";
+                    if (_settings.EnableCanvasMovie && _beatmap != null && _bgVideoFrame != null)
+                    {
+                        string rawVid = _beatmap.GetVideoFullPath();
+                        if (!string.IsNullOrEmpty(rawVid))
+                        {
+                            string resolvedVid = "";
+                            if (File.Exists(rawVid))
+                            {
+                                resolvedVid = rawVid;
+                            }
+                            else
+                            {
+                                // Fallback extensions if raw extension isn't found on disk
+                                string[] fallbacks = { ".mp4", ".avi", ".ogv", ".ogg", ".flv" };
+                                foreach (var ext in fallbacks)
+                                {
+                                    string testPath = Path.ChangeExtension(rawVid, ext);
+                                    if (File.Exists(testPath))
+                                    {
+                                        resolvedVid = testPath;
+                                        break;
+                                    }
+                                }
+                            }
+
+                            if (!string.IsNullOrEmpty(resolvedVid))
+                            {
+                                _bgVideoFilename = resolvedVid;
+                            }
+                        }
+                    }
+
                     _startPhase = 2;
                     _startShrinkTweener.Restart(2.1f, 1.0f, Easing.Fluid, Direction.InOut);
                 }
@@ -281,16 +442,16 @@ namespace CoreGame
                 else if (_startPhase == 2 && _startTimer >= 3.5f)
                 {
                     _startPhase = 3;
-                    SetMusicLowPass(_currentAudioKey, false); // Disable LowPass filter for clean gameplay audio!
+                    _isLowPassEnabled = false;
+                    SetMusicLowPass(_currentAudioKey, _isLowPassEnabled); // Disable LowPass filter for clean gameplay audio!
 
                     // TODO: ENTER GAMEPLAY SCENE
-                    //Console.WriteLine("/// TRANSITION FINISHED: LOAD GAMEPLAY STATE ///");
 
                     StopMusic(_currentAudioKey);
                     SeekMusic(_currentAudioKey, 0f);
 
                     // 1. Recycle the existing rhythm indexer and tell it to wait for 0.0s!
-                    _rythmIndexer?.MusicOffset = -55.35f;
+                    _rythmIndexer?.MusicOffset = _settings.AudioOffset;
                     _rythmIndexer?.Beatmap = _beatmap;
                     _rythmIndexer?.Reset(0f); // Uses your InterpolatingAudioClock's built in Reset
 
@@ -301,13 +462,7 @@ namespace CoreGame
                     }
 
                     // 2. Wipe any old state and load the new notes
-                    _taikofield.alpha = 0f;
-                    _taikofield.IsAutoplay = _modAutoplay;
-                    _taikofield.SingleMode = _modSingleMode;
-                    _taikofield.GlobalScale = _settings.GlobalScale;
-                    _taikofield.ResetState();
-                    _taikofield.LoadBeatmap(_beatmap);
-                    _taikofield.OnSplitFinished = () =>
+                    Action onSplitFinished = () =>
                     {
                         Console.WriteLine("Split Finished");
                         if (_audioTweeners.ContainsKey(_currentAudioKey))
@@ -316,6 +471,84 @@ namespace CoreGame
                             PlayMusic(_currentAudioKey);
                         }
                     };
+
+                    if (_activeGameplayMode == GameplayMode.Taiko)
+                    {
+                        _taikofield?.alpha = 0f;
+                        _taikofield?.IsAutoplay = _modAutoplay;
+                        _taikofield?.SingleMode = _modSingleMode;
+                        _taikofield?.GlobalScale = _settings.GlobalScale;
+                        _taikofield?.ResetState();
+                        _taikofield?.LoadBeatmap(_beatmap);
+                        _taikofield?.OnSplitFinished = onSplitFinished;
+
+                        _stackfield?.ResetState();
+                        _stackfield?.alpha = 0f;
+                        _stackfield?.LoadBeatmap(null);
+                    }
+                    else
+                    {
+                        _stackfield?.alpha = 0f;
+                        _stackfield?.IsAutoplay = _modAutoplay;
+                        _stackfield?.GlobalScale = _settings.GlobalScale;
+                        _stackfield?.ResetState();
+                        _stackfield?.LoadBeatmap(_beatmap);
+                        _stackfield?.OnSplitFinished = onSplitFinished;
+
+                        _taikofield?.ResetState();
+                        _taikofield?.alpha = 0f;
+                        _taikofield?.LoadBeatmap(null);
+                    }
+                }
+                else if (_startPhase == 3)
+                {
+                    bool finished = false;
+                    if (_activeGameplayMode == GameplayMode.Taiko)
+                        finished = _taikofield != null ? _taikofield.IsGameplayFinished : true;
+                    else
+                        finished = _stackfield != null ? _stackfield.IsGameplayFinished : true;
+
+                    if (GetMusicTimePlayed(_currentAudioKey) >= GetMusicLength(_currentAudioKey) - 1f)
+                    {
+                        Console.WriteLine("Is Finished");
+                        finished = true;
+                    }
+
+                    if (finished)
+                    {
+                        _gameplayFinishTimer += dt;
+                        if (_gameplayFinishTimer >= 0.25f && !_inResultScreen)
+                        {
+                            Console.WriteLine("Show result screen");
+
+                            _gameplayFinishTimer = 0f;
+                            _inResultScreen = true;
+
+                            if (_bgVideoFrame != null)
+                            {
+                                _bgVideoFrame.Stop();
+                                _bgVideoFrame.skipDraw = true;
+                            }
+                            _bgDrop.alpha = 1f;
+
+                            if (_activeGameplayMode == GameplayMode.Taiko)
+                            {
+                                _resultscreen?.Show(_beatmap, _taikofield != null ? _taikofield.Score : 0, _taikofield != null ? _taikofield.MaxComboReached : 0, _taikofield != null ? _taikofield.HitsPerfect : 0, _taikofield != null ? _taikofield.HitsGood : 0, _taikofield != null ? _taikofield.HitsOk : 0, _taikofield != null ? _taikofield.HitsMiss : 0, _modAutoplay);
+                                if (!_modAutoplay && _taikofield != null)
+                                    _online.SubmitScore(_beatmap?.BeatmapSetId ?? 0, _taikofield.Score, _taikofield.MaxComboReached, _taikofield.HitsPerfect, _taikofield.HitsGood, _taikofield.HitsOk, _taikofield.HitsMiss, _activeGameplayMode, _beatmap?.Version ?? "Unknown");
+                            }
+                            else
+                            {
+                                _resultscreen.Show(_beatmap, _stackfield != null ? _stackfield.Score : 0, _stackfield != null ? _stackfield.MaxComboReached : 0, _stackfield != null ? _stackfield.HitsPerfect : 0, _stackfield != null ? _stackfield.HitsGood : 0, _stackfield != null ? _stackfield.HitsOk : 0, _stackfield != null ? _stackfield.HitsMiss : 0, _modAutoplay);
+                                if (!_modAutoplay && _stackfield != null)
+                                    _online.SubmitScore(_beatmap?.BeatmapSetId ?? 0, _stackfield.Score, _stackfield.MaxComboReached, _stackfield.HitsPerfect, _stackfield.HitsGood, _stackfield.HitsOk, _stackfield.HitsMiss, _activeGameplayMode, _beatmap?.Version ?? "Unknown");
+                            }
+                        }
+                    }
+                    else
+                    {
+                        _gameplayFinishTimer = 0f;
+                    }
                 }
             }
 
@@ -328,12 +561,11 @@ namespace CoreGame
                     {
                         if (_listeningActionName == "ToggleCover") _keyToggleCover = key;
                         else if (_listeningActionName == "StartGame") _keyStartGame = key;
-                        else if (_listeningActionName == "ExitGameplay") { _keyExitGameplay = key; if (_taikofield != null) _taikofield.ExitKey = key; }
-                        else if (_listeningActionName == "HitLeft1") { _keyHitLeft1 = key; RealTimeInputEngine.ConfigureKeys(new int[4] { (int)_keyHitLeft1, (int)_keyHitLeft2, (int)_keyHitRight1, (int)_keyHitRight2 }); if (_taikofield != null) _taikofield.HitKeys = new Keys[] { _keyHitLeft1, _keyHitLeft2, _keyHitRight1, _keyHitRight2 }; }
-                        else if (_listeningActionName == "HitLeft2") { _keyHitLeft2 = key; RealTimeInputEngine.ConfigureKeys(new int[4] { (int)_keyHitLeft1, (int)_keyHitLeft2, (int)_keyHitRight1, (int)_keyHitRight2 }); if (_taikofield != null) _taikofield.HitKeys = new Keys[] { _keyHitLeft1, _keyHitLeft2, _keyHitRight1, _keyHitRight2 }; }
-                        else if (_listeningActionName == "HitRight1") { _keyHitRight1 = key; RealTimeInputEngine.ConfigureKeys(new int[4] { (int)_keyHitLeft1, (int)_keyHitLeft2, (int)_keyHitRight1, (int)_keyHitRight2 }); if (_taikofield != null) _taikofield.HitKeys = new Keys[] { _keyHitLeft1, _keyHitLeft2, _keyHitRight1, _keyHitRight2 }; }
-                        else if (_listeningActionName == "HitRight2") { _keyHitRight2 = key; RealTimeInputEngine.ConfigureKeys(new int[4] { (int)_keyHitLeft1, (int)_keyHitLeft2, (int)_keyHitRight1, (int)_keyHitRight2 }); if (_taikofield != null) _taikofield.HitKeys = new Keys[] { _keyHitLeft1, _keyHitLeft2, _keyHitRight1, _keyHitRight2 }; }
-                        else if (_listeningActionName == "ListenScore") _keyToggleListenScore = key;
+                        else if (_listeningActionName == "ExitGameplay") { _keyExitGameplay = key; if (_taikofield != null) _taikofield.ExitKey = key; if (_stackfield != null) _stackfield.ExitKey = key; }
+                        else if (_listeningActionName == "HitLeft1") { _keyHitLeft1 = key; RealTimeInputEngine.ConfigureKeys(new int[4] { (int)_keyHitLeft1, (int)_keyHitLeft2, (int)_keyHitRight1, (int)_keyHitRight2 }); var hk = new Keys[] { _keyHitLeft1, _keyHitLeft2, _keyHitRight1, _keyHitRight2 }; if (_taikofield != null) _taikofield.HitKeys = hk; if (_stackfield != null) _stackfield.HitKeys = hk; }
+                        else if (_listeningActionName == "HitLeft2") { _keyHitLeft2 = key; RealTimeInputEngine.ConfigureKeys(new int[4] { (int)_keyHitLeft1, (int)_keyHitLeft2, (int)_keyHitRight1, (int)_keyHitRight2 }); var hk = new Keys[] { _keyHitLeft1, _keyHitLeft2, _keyHitRight1, _keyHitRight2 }; if (_taikofield != null) _taikofield.HitKeys = hk; if (_stackfield != null) _stackfield.HitKeys = hk; }
+                        else if (_listeningActionName == "HitRight1") { _keyHitRight1 = key; RealTimeInputEngine.ConfigureKeys(new int[4] { (int)_keyHitLeft1, (int)_keyHitLeft2, (int)_keyHitRight1, (int)_keyHitRight2 }); var hk = new Keys[] { _keyHitLeft1, _keyHitLeft2, _keyHitRight1, _keyHitRight2 }; if (_taikofield != null) _taikofield.HitKeys = hk; if (_stackfield != null) _stackfield.HitKeys = hk; }
+                        else if (_listeningActionName == "HitRight2") { _keyHitRight2 = key; RealTimeInputEngine.ConfigureKeys(new int[4] { (int)_keyHitLeft1, (int)_keyHitLeft2, (int)_keyHitRight1, (int)_keyHitRight2 }); var hk = new Keys[] { _keyHitLeft1, _keyHitLeft2, _keyHitRight1, _keyHitRight2 }; if (_taikofield != null) _taikofield.HitKeys = hk; if (_stackfield != null) _stackfield.HitKeys = hk; }
                         else if (_listeningActionName == "ExitGame") _keyExitGame = key;
 
                         _isListeningForKey = false;
@@ -346,7 +578,7 @@ namespace CoreGame
             }
 
             // --- Replaying ---
-            if (GetMusicTimePlayed(_currentAudioKey) >= GetMusicLength(_currentAudioKey) - 0.025f)
+            if (GetMusicTimePlayed(_currentAudioKey) >= GetMusicLength(_currentAudioKey) - 0.025f && !_inResultScreen)
             {
                 StopMusic(_currentAudioKey);
                 PlayMusic(_currentAudioKey);
@@ -486,54 +718,92 @@ namespace CoreGame
         {
             if (targetMap == _beatmap) return; // Prevent clicking the song that is already playing
 
+            string newAudioPath = Path.Combine(Path.GetDirectoryName(targetMap.FilePath) ?? "", targetMap.AudioFilename);
+            string oldAudioPath = _beatmap != null ? Path.Combine(Path.GetDirectoryName(_beatmap.FilePath) ?? "", _beatmap.AudioFilename) : "";
+
+            if (newAudioPath == oldAudioPath && !string.IsNullOrEmpty(oldAudioPath))
+            {
+                // Same audio track/beatmap set, just a different difficulty!
+                _beatmap = targetMap;
+                if (_rythmIndexer != null) _rythmIndexer.Beatmap = _beatmap;
+                return;
+            }
+
             // 1. Fade out the CURRENT song (if it exists)
             if (_audioTweeners.ContainsKey(_currentAudioKey))
             {
                 // Retarget the existing tweener to 0. 
                 // Because of your Tweener.Restart logic, it smoothly fades down from its CURRENT volume! No snapping!
-                _audioTweeners[_currentAudioKey].Restart(0.7f, 0f, Easing.Exponential, Direction.Out);
+                _audioTweeners[_currentAudioKey].Restart(0.5f, 0f, Easing.Exponential, Direction.Out);
             }
             string newBgKey = targetMap.BeatmapSetId.ToString();
             string oldBgKey = _beatmap?.BeatmapSetId.ToString() ?? "";
 
             // 2. Setup the New Song Identity
             _audioCounter++;
-            _currentAudioKey = $"au_{_audioCounter}";
+            string loadingAudioKey = $"au_{_audioCounter}";
+            _currentAudioKey = loadingAudioKey;
             _beatmap = targetMap;
-
-            // 3. Swap UI & Visuals Immediately (Feels incredibly snappy)
-            Image newBg = LoadImage(newBgKey, targetMap.GetBackgroundFullPath());
-            if (bg != null) bg.texture = newBg;
-            _targetCoverColor = GetAverageColor(newBg, 28);
-
-            if (newBgKey != oldBgKey)
-            {
-                // ONLY unload the old texture if the background key is actually changing!
-                if (!string.IsNullOrEmpty(oldBgKey))
-                {
-                    Console.WriteLine($"Unloading image... {oldBgKey} Before Loading New Image {newBgKey}");
-                    UnloadImage(oldBgKey);
-                }
-            }
 
             if (_rythmIndexer != null) _rythmIndexer.Beatmap = _beatmap;
 
-            // 4. Load & Play New Audio
-            LoadMusic(_currentAudioKey, Path.Combine(Path.GetDirectoryName(_beatmap.FilePath) ?? "", _beatmap.AudioFilename));
-            SetMusicVolume(_currentAudioKey, 0f); // Force start at 0 volume
-            SetMusicSpeed(_currentAudioKey, _speedMultiplier, _adjustPitch);
-            PlayMusic(_currentAudioKey);
-            SeekMusic(_currentAudioKey, _beatmap.PreviewTime / 1000f);
+            // 3. Load assets asynchronously in the background
+            string bgPath = targetMap.GetBackgroundFullPath();
+            string audioPath = Path.Combine(Path.GetDirectoryName(targetMap.FilePath) ?? "", targetMap.AudioFilename);
+            float previewTime = targetMap.PreviewTime / 1000f;
 
-            // 5. Create and start the Fade-In Tweener
-            var fadeInTweener = AddTween(new Tweener());
-            fadeInTweener.SetValue(0f); // Snap tweener state to 0
-            fadeInTweener.Restart(0.7f, _targetVolume, Easing.Exponential, Direction.In);
+            Task.Run(() =>
+            {
+                try
+                {
+                    // A. Load new background image (thread-safe lock in GraphicsHelper)
+                    Image newBg = LoadImage(newBgKey, bgPath);
 
-            // Track it in our dictionary
-            _audioTweeners[_currentAudioKey] = fadeInTweener;
+                    // B. Compute average color (blocks background thread, not main update loop)
+                    Color averageColor = GetAverageColor(newBg, 28);
 
-            RefreshScoreboard(_scoreboardPanel);
+                    // C. Load new audio file (thread-safe lock in AudioHelper)
+                    LoadMusic(loadingAudioKey, audioPath);
+
+                    // D. Dispatch visual update and music playback back to the main thread
+                    _loadQueue.Enqueue(() =>
+                    {
+                        // Check if this request is still the active/latest one (ignores stale requests from fast-clicking)
+                        if (_currentAudioKey == loadingAudioKey)
+                        {
+                            if (bg != null) bg.texture = newBg;
+                            _targetCoverColor = averageColor;
+
+                            if (newBgKey != oldBgKey && !string.IsNullOrEmpty(oldBgKey))
+                            {
+                                Console.WriteLine($"Unloading image... {oldBgKey} Before Loading New Image {newBgKey}");
+                                UnloadImage(oldBgKey);
+                            }
+
+                            SetMusicVolume(loadingAudioKey, 0f); // Force start at 0 volume
+                            SetMusicSpeed(loadingAudioKey, _speedMultiplier, _adjustPitch);
+                            PlayMusic(loadingAudioKey);
+                            SeekMusic(loadingAudioKey, previewTime);
+
+                            // Create and start the Fade-In Tweener
+                            var fadeInTweener = AddTween(new Tweener());
+                            fadeInTweener.SetValue(0f); // Snap tweener state to 0
+                            fadeInTweener.Restart(0.5f, _targetVolume, Easing.Exponential, Direction.In);
+
+                            _audioTweeners[loadingAudioKey] = fadeInTweener;
+                        }
+                        else
+                        {
+                            // If a newer song has already been selected, clean up this audio stream
+                            UnloadMusic(loadingAudioKey);
+                        }
+                    });
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[ChangeSong] Async loading error: {ex.Message}");
+                }
+            });
         }
 
         private void RepopulatePlaylist()
@@ -542,36 +812,150 @@ namespace CoreGame
             if (_playlistScroll == null) return;
             _playlistScroll.children.Clear();
 
-            float currentYOffset = 10f;
-            int index = 0;
+            int layoutOrderCounter = 0;
+            int songNumber = 1;
 
             foreach (var group in _beatmapGroups)
             {
                 // 1. Create and add Header card
-                var header = CreateHeaderRow(group, index++, currentYOffset);
+                var header = CreateHeaderRow(group, songNumber);
+                header.LayoutOrder = layoutOrderCounter++;
                 _playlistScroll.children.Add(header);
-                currentYOffset += 90f; // 80px + 10px spacing
 
-                // 2. Always show nested difficulties (no expansion checks!)
+                // 2. Add mini difficulty header
+                var diffHeader = CreateDifficultyHeaderRow(group);
+                diffHeader.LayoutOrder = layoutOrderCounter++;
+                _playlistScroll.children.Add(diffHeader);
+
+                // 3. Add nested difficulties
+                int diffIndex = 1;
                 foreach (var diff in group.Difficulties)
                 {
-                    var diffRow = CreateDifficultyRow(diff, index++, currentYOffset);
+                    var diffRow = CreateDifficultyRow(diff, group, $"{songNumber}.{diffIndex}");
+                    diffRow.LayoutOrder = layoutOrderCounter++;
                     _playlistScroll.children.Add(diffRow);
-                    currentYOffset += 50f; // 40px + 10px spacing
+                    diffIndex++;
                 }
+
+                songNumber++;
             }
         }
 
-        private Button CreateHeaderRow(BeatmapGroup group, int index, float yOffset)
+        private void DeleteSong(BeatmapGroup group)
         {
-            float currentHoverScale = 1f;
             var bm = group.Representative;
+            if (bm == null) return;
+
+            string folderPath = Path.GetDirectoryName(bm.FilePath) ?? "";
+            if (string.IsNullOrEmpty(folderPath) || !Directory.Exists(folderPath)) return;
+
+            try
+            {
+                // 1. If we are currently playing this song, change target or stop it.
+                if (_beatmap != null && Path.GetDirectoryName(_beatmap.FilePath) == folderPath)
+                {
+                    // Find another beatmap that is NOT in this folder
+                    var otherGroup = _beatmapGroups.FirstOrDefault(g => g != group);
+                    if (otherGroup != null && otherGroup.Difficulties.Count > 0)
+                    {
+                        var nextBm = otherGroup.Difficulties[0];
+                        _starRating = GetRealStarRating(nextBm);
+                        
+                        // Stop current music immediately to release file lock before changing song
+                        StopMusic(_currentAudioKey);
+                        UnloadMusic(_currentAudioKey);
+                        if (_audioTweeners.ContainsKey(_currentAudioKey))
+                        {
+                            var tw = _audioTweeners[_currentAudioKey];
+                            _audioTweeners.Remove(_currentAudioKey);
+                            Remove(tw);
+                        }
+
+                        // Also unload current cover image to release file lock
+                        string currentBgKey = _beatmap.BeatmapSetId.ToString();
+                        UnloadImage(currentBgKey);
+
+                        // Switch to the next song
+                        ChangeSong(nextBm, _bgImageFrame);
+                    }
+                    else
+                    {
+                        // No other songs left!
+                        _beatmap = null;
+                        StopMusic(_currentAudioKey);
+                        UnloadMusic(_currentAudioKey);
+                        if (_audioTweeners.ContainsKey(_currentAudioKey))
+                        {
+                            var tw = _audioTweeners[_currentAudioKey];
+                            _audioTweeners.Remove(_currentAudioKey);
+                            Remove(tw);
+                        }
+                    }
+                }
+
+                // Unload all thumbnails of difficulties in this group to release locks
+                string thumbId = bm.BeatmapSetId.ToString() + "_thumb";
+                UnloadImage(thumbId);
+
+                // Give the system a brief moment (e.g. 50ms) to ensure file handles are released by the audio/graphics library
+                System.Threading.Thread.Sleep(50);
+
+                // Delete the folder
+                Directory.Delete(folderPath, true);
+                Console.WriteLine($"[MainGame] Deleted beatmap folder: {folderPath}");
+
+                // Reload scanned beatmaps and repopulate the playlist
+                var scannedBeatmaps = _scanner.ScanLazy(SongsPath, metadataOnly: true).ToList();
+                var groups = scannedBeatmaps
+                    .GroupBy(g => g.BeatmapSetId > 0 ? g.BeatmapSetId.ToString() : $"{g.Title}_{g.Artist}")
+                    .Select(g => new BeatmapGroup
+                    {
+                        Key = g.Key,
+                        Representative = g.First(),
+                        Difficulties = g.OrderBy(dbm => GetRealStarRating(dbm)).ToList()
+                    })
+                    .ToList();
+
+                _beatmapGroups.Clear();
+                _beatmapGroups.AddRange(groups);
+
+                // If _beatmap was null and we have scanned beatmaps left, select one randomly
+                if (_beatmap == null && scannedBeatmaps.Count > 0)
+                {
+                    var beatmapRand = new Random();
+                    _beatmap = scannedBeatmaps[beatmapRand.Next(scannedBeatmaps.Count)];
+                    _starRating = GetRealStarRating(_beatmap);
+                    ChangeSong(_beatmap, _bgImageFrame);
+                }
+
+                RepopulatePlaylist();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[MainGame] Error deleting song: {ex.Message}");
+            }
+        }
+
+        private Frame CreateHeaderRow(BeatmapGroup group, int songNumber)
+        {
+            float currentOffsetX = -20f;
+            var bm = group.Representative;
+
+            Frame headerFrame = new Frame
+            {
+                position = new UDim2(1f, 0f, -20f, 0f),
+                anchorX = AnchorX.Right,
+                anchorY = AnchorY.Top,
+                size = new UDim2(1f, 0f, -40f, 80f),
+                color = new Color(0, 0, 0, 0) // transparent container
+            };
 
             var rowButton = new Button
             {
-                position = new UDim2(1f, 0f, -10f, yOffset),
-                anchorX = AnchorX.Right,
+                position = new UDim2(0f, 0f, 0f, 0f),
+                anchorX = AnchorX.Left,
                 anchorY = AnchorY.Top,
+                size = new UDim2(1f, 0f, -45f, 80f), // Width is 100% of container minus 45px (for delete button)
                 onClick = (b) =>
                 {
                     // Select the easiest difficulty from the set directly!
@@ -582,6 +966,13 @@ namespace CoreGame
                         ChangeSong(easiestDiff, _bgImageFrame);
                     }
 
+                    // Toggle expansion state, collapse others
+                    bool nextState = !group.IsExpanded;
+                    foreach (var g in _beatmapGroups)
+                    {
+                        g.IsExpanded = (g == group) ? nextState : false;
+                    }
+
                     PlaySFX("select");
                 },
                 onHoverEnter = (b) =>
@@ -589,15 +980,49 @@ namespace CoreGame
                     PlaySFX("hover");
                 }
             };
+            headerFrame.children.Add(rowButton);
+
+            Button deleteBtn = new Button
+            {
+                position = new UDim2(1f, 0f, 0f, 0f),
+                anchorX = AnchorX.Right,
+                anchorY = AnchorY.Top,
+                size = new UDim2(0f, 0f, 40f, 80f), // Width: 40px, Height: 80px
+                color = new Color(180, 50, 50, 100),
+                hoverColor = new Color(240, 70, 70, 200),
+                pressedColor = new Color(255, 30, 30, 245),
+                onHoverEnter = (_) => PlaySFX("hover"),
+                onClick = (_) =>
+                {
+                    PlaySFX("select");
+                    _loadQueue.Enqueue(() => DeleteSong(group));
+                }
+            };
+            headerFrame.children.Add(deleteBtn);
+
+            // Add a cross close/delete symbol inside deleteBtn
+            deleteBtn.children.Add(new TextFrame
+            {
+                text = "✕",
+                fontName = "gsans_bold",
+                position = new UDim2(0.5f, 0.5f),
+                anchorX = AnchorX.Center,
+                anchorY = AnchorY.Center,
+                textAnchorX = AnchorX.Center,
+                textAnchorY = AnchorY.Center,
+                scale = 1.3f,
+                color = Color.White
+            });
+
+            headerFrame.onUpdate = (e, dt) =>
+            {
+                float targetOffsetX = rowButton.IsHovered || deleteBtn.IsHovered ? -28f : -20f;
+                currentOffsetX = ArtMathHelper.Lerp(currentOffsetX, targetOffsetX, 0.1f);
+                headerFrame.position = new UDim2(1f, 0f, currentOffsetX, headerFrame.position.OffsetY);
+            };
 
             rowButton.onUpdate = (btn) =>
             {
-                float hoveredScale = btn.IsHovered ? 1.06f : 1f;
-                float targetScale = btn.IsPressed ? hoveredScale + 0.045f : hoveredScale;
-                currentHoverScale = ArtMathHelper.Lerp(currentHoverScale, targetScale, 0.05f);
-
-                rowButton.size = new UDim2(0f, 0f, 440f * currentHoverScale, 80f);
-
                 byte r = (byte)(_currentCoverColor.R * 0.85f);
                 byte g = (byte)(_currentCoverColor.G * 0.85f);
                 byte b = (byte)(_currentCoverColor.B * 0.85f);
@@ -607,10 +1032,24 @@ namespace CoreGame
                 btn.pressedColor = new Color(r, g, b, 255);
             };
 
+            // Song Index Number label (placed at X = 15px)
+            rowButton.children.Add(new TextFrame
+            {
+                text = songNumber.ToString(),
+                fontName = "gsans_bold",
+                position = new UDim2(0f, 0.5f, 15f, 0f),
+                anchorX = AnchorX.Left,
+                anchorY = AnchorY.Center,
+                textAnchorX = AnchorX.Center,
+                textAnchorY = AnchorY.Center,
+                scale = 1.2f,
+                color = Color.White
+            });
+
             var thumbFrame = new ImageFrame
             {
                 texture = LoadImage("logo"),
-                position = new UDim2(0f, 0.5f, 10f, 0f),
+                position = new UDim2(0f, 0.5f, 45f, 0f), // shifted right to 45px
                 size = new UDim2(0f, 0f, 60f, 60f),
                 anchorX = AnchorX.Left,
                 anchorY = AnchorY.Center,
@@ -634,23 +1073,112 @@ namespace CoreGame
                 }
             });
 
-            // Title & Artist
-            rowButton.children.Add(new TextFrame { text = bm.Title, fontName = "gsans_bold", position = new UDim2(0f, 0f, 85f, 18f), anchorX = AnchorX.Left, anchorY = AnchorY.Top, textAnchorX = AnchorX.Left, textAnchorY = AnchorY.Top, scale = 1.3f, color = Color.White });
+            // Title & Artist (shifted right to 120px)
+            rowButton.children.Add(new TextFrame { text = bm.Title, fontName = "gsans_bold", position = new UDim2(0f, 0f, 120f, 18f), anchorX = AnchorX.Left, anchorY = AnchorY.Top, textAnchorX = AnchorX.Left, textAnchorY = AnchorY.Top, scale = 1.3f, color = Color.White });
             
-            // Subtext with Diffs Count
-            rowButton.children.Add(new TextFrame { text = $"{bm.Artist}  //  [ {group.Difficulties.Count} difficulties ]", fontName = "gsans", position = new UDim2(0f, 0f, 85f, 45f), anchorX = AnchorX.Left, anchorY = AnchorY.Top, textAnchorX = AnchorX.Left, textAnchorY = AnchorY.Top, scale = 1.0f, color = new Color(220, 220, 255) });
+            // Subtext with Diffs Count (shifted right to 120px)
+            rowButton.children.Add(new TextFrame { text = $"{bm.Artist}  //  [ {group.Difficulties.Count} difficulties ]", fontName = "gsans", position = new UDim2(0f, 0f, 120f, 45f), anchorX = AnchorX.Left, anchorY = AnchorY.Top, textAnchorX = AnchorX.Left, textAnchorY = AnchorY.Top, scale = 1.0f, color = new Color(220, 220, 255) });
 
-            return rowButton;
+            return headerFrame;
         }
 
-        private Button CreateDifficultyRow(OsuBeatmap bm, int index, float yOffset)
+        private Frame CreateDifficultyHeaderRow(BeatmapGroup group)
         {
-            float currentHoverScale = 1f;
+            // Tweener for the height/expansion animation
+            Tweener heightTweener = new Tweener();
+            heightTweener.SetValue(group.IsExpanded ? 24f : 0f);
+            float lastTargetHeight = group.IsExpanded ? 24f : 0f;
+
+            var headerFrame = new Frame
+            {
+                position = new UDim2(1f, 0f, -20f, 0f),
+                anchorX = AnchorX.Right,
+                anchorY = AnchorY.Top,
+                color = new Color(0, 0, 0, 0) // transparent
+            };
+
+            // Mini Labels
+            var hashLabel = new TextFrame
+            {
+                text = "#",
+                fontName = "gsans_bold",
+                position = new UDim2(0f, 0.5f, 20f, 0f), // aligned with the diff index
+                anchorX = AnchorX.Left,
+                anchorY = AnchorY.Center,
+                textAnchorX = AnchorX.Center,
+                textAnchorY = AnchorY.Center,
+                scale = 0.85f,
+                color = Color.White
+            };
+            headerFrame.children.Add(hashLabel);
+
+            var diffLabel = new TextFrame
+            {
+                text = "Difficulty",
+                fontName = "gsans_bold",
+                position = new UDim2(0f, 0.5f, 60f, 0f), // aligned with the diff name
+                anchorX = AnchorX.Left,
+                anchorY = AnchorY.Center,
+                textAnchorX = AnchorX.Left,
+                textAnchorY = AnchorY.Center,
+                scale = 0.85f,
+                color = Color.White
+            };
+            headerFrame.children.Add(diffLabel);
+
+            var ratingLabel = new TextFrame
+            {
+                text = "Rating",
+                fontName = "gsans_bold",
+                position = new UDim2(1f, 0.5f, -8f, 0f), // aligned with the color bar on the right
+                anchorX = AnchorX.Right,
+                anchorY = AnchorY.Center,
+                textAnchorX = AnchorX.Right,
+                textAnchorY = AnchorY.Center,
+                scale = 0.85f,
+                color = Color.White
+            };
+            headerFrame.children.Add(ratingLabel);
+
+            headerFrame.onUpdate = (f, dt) =>
+            {
+                float targetHeight = group.IsExpanded ? 24f : 0f;
+                if (targetHeight != lastTargetHeight)
+                {
+                    lastTargetHeight = targetHeight;
+                    heightTweener.Restart(0.25f, targetHeight, Easing.Cubic, Direction.Out);
+                }
+                
+                headerFrame.skipDraw = (heightTweener.CurrentValue < 0.1f && !group.IsExpanded);
+                if (headerFrame.skipDraw) return; // skip updating height when culled
+                heightTweener.Update(_currentDt);
+
+                headerFrame.size = new UDim2(1f, 0f, -80f, heightTweener.CurrentValue); // width aligned with difficulty rows
+
+                float alphaFraction = heightTweener.CurrentValue / 24f;
+                headerFrame.alpha = alphaFraction;
+                hashLabel.alpha = alphaFraction;
+                diffLabel.alpha = alphaFraction;
+                ratingLabel.alpha = alphaFraction;
+            };
+
+            return headerFrame;
+        }
+
+        private Button CreateDifficultyRow(OsuBeatmap bm, BeatmapGroup group, string indexStr)
+        {
+            float currentOffsetX = -20f;
             float starRating = GetRealStarRating(bm);
+
+            // Tweener for the height/expansion animation
+            Tweener heightTweener = new Tweener();
+            // Start it at the current state instantly (either 40 or 0)
+            heightTweener.SetValue(group.IsExpanded ? 40f : 0f);
+            float lastTargetHeight = group.IsExpanded ? 40f : 0f;
 
             var rowButton = new Button
             {
-                position = new UDim2(1f, 0f, -10f, yOffset), // indent it slightly to look nested
+                position = new UDim2(1f, 0f, -20f, 0f),
                 anchorX = AnchorX.Right,
                 anchorY = AnchorY.Top,
 
@@ -666,46 +1194,28 @@ namespace CoreGame
                 }
             };
 
-            rowButton.onUpdate = (btn) =>
+            // Difficulty Index label (placed at X = 20px)
+            var indexLabel = new TextFrame
             {
-                float hoveredScale = btn.IsHovered ? 1.04f : 1f;
-                float pressedScale = btn.IsPressed ? hoveredScale + 0.03f : hoveredScale;
-                float targetScale = _beatmap == bm ? hoveredScale + 0.05f : hoveredScale;
-                currentHoverScale = ArtMathHelper.Lerp(currentHoverScale, targetScale, 0.05f);
-
-                rowButton.size = new UDim2(0f, 0f, 420f * currentHoverScale, 40f);
-
-                byte r = (byte)(_currentCoverColor.R * 0.7f);
-                byte g = (byte)(_currentCoverColor.G * 0.7f);
-                byte b = (byte)(_currentCoverColor.B * 0.7f);
-
-                btn.color = new Color(r, g, b, 175);
-                btn.hoverColor = new Color(r, g, b, 235);
-                btn.pressedColor = new Color(r, g, b, 255);
-            };
-
-            // Spotify style "+" icon prefix
-            var plusIcon = new TextFrame
-            {
-                text = "+",
+                text = indexStr,
                 fontName = "gsans_bold",
-                position = new UDim2(0f, 0.5f, 15f, 0f),
+                position = new UDim2(0f, 0.5f, 20f, 0f),
                 anchorX = AnchorX.Left,
                 anchorY = AnchorY.Center,
                 textAnchorX = AnchorX.Center,
                 textAnchorY = AnchorY.Center,
-                scale = 1.1f,
-                color = new Color(200, 255, 200)
+                scale = 0.95f,
+                color = Color.White
             };
-            rowButton.children.Add(plusIcon);
+            rowButton.children.Add(indexLabel);
 
-            // Difficulty Name & Star Rating
+            // Difficulty Name & Star Rating (aligned 60px from left)
             string difficultyText = $"{bm.Version}  (★ {starRating:F2})";
             var label = new TextFrame
             {
                 text = difficultyText,
                 fontName = "gsans_bold",
-                position = new UDim2(0f, 0.5f, 35f, 0f),
+                position = new UDim2(0f, 0.5f, 60f, 0f),
                 anchorX = AnchorX.Left,
                 anchorY = AnchorY.Center,
                 textAnchorX = AnchorX.Left,
@@ -725,6 +1235,43 @@ namespace CoreGame
                 color = GetDifficultyColor(bm)
             };
             rowButton.children.Add(colorBar);
+
+            rowButton.onUpdate = (btn) =>
+            {
+                // Update the height tweener
+                float targetHeight = group.IsExpanded ? 40f : 0f;
+                if (targetHeight != lastTargetHeight)
+                {
+                    lastTargetHeight = targetHeight;
+                    heightTweener.Restart(0.25f, targetHeight, Easing.Cubic, Direction.Out);
+                }
+                
+                rowButton.skipDraw = (heightTweener.CurrentValue < 0.1f && !group.IsExpanded);
+                if (rowButton.skipDraw) return; // skip update when fully collapsed
+                heightTweener.Update(_currentDt);
+
+                float targetOffsetX = btn.IsHovered ? -26f : -20f;
+                currentOffsetX = ArtMathHelper.Lerp(currentOffsetX, targetOffsetX, 0.1f);
+
+                rowButton.position = new UDim2(1f, 0f, currentOffsetX, rowButton.position.OffsetY);
+                rowButton.size = new UDim2(1f, 0f, -80f, heightTweener.CurrentValue); // Width is 100% of scrollframe minus 80px (for indent)
+
+                // Fade alpha of background and children
+                float alphaFraction = heightTweener.CurrentValue / 40f;
+                rowButton.alpha = alphaFraction;
+
+                indexLabel.alpha = alphaFraction;
+                label.alpha = alphaFraction;
+                colorBar.alpha = alphaFraction;
+
+                byte r = (byte)(_currentCoverColor.R * 0.7f);
+                byte g = (byte)(_currentCoverColor.G * 0.7f);
+                byte b = (byte)(_currentCoverColor.B * 0.7f);
+
+                btn.color = new Color(r, g, b, 175);
+                btn.hoverColor = new Color(r, g, b, 235);
+                btn.pressedColor = new Color(r, g, b, 255);
+            };
 
             return rowButton;
         }
@@ -830,7 +1377,6 @@ namespace CoreGame
                         if (Enum.TryParse<Keys>(_settings.KeyExitGameplay, out var k3)) _keyExitGameplay = k3;
                         if (Enum.TryParse<Keys>(_settings.KeyHitLeft1, out var k4)) _keyHitLeft1 = k4;
                         if (Enum.TryParse<Keys>(_settings.KeyHitRight1, out var k5)) _keyHitRight1 = k5;
-                        if (Enum.TryParse<Keys>(_settings.KeyToggleListenScore, out var k6)) _keyToggleListenScore = k6;
                         if (Enum.TryParse<Keys>(_settings.KeyExitGame, out var k7)) _keyExitGame = k7;
                         if (Enum.TryParse<Keys>(_settings.KeyHitLeft2, out var k8)) _keyHitLeft2 = k8;
                         if (Enum.TryParse<Keys>(_settings.KeyHitRight2, out var k9)) _keyHitRight2 = k9;
@@ -839,6 +1385,11 @@ namespace CoreGame
                         {
                             _taikofield.ScrollSpeed = _settings.ScrollSpeed;
                             _taikofield.GlobalScale = _settings.GlobalScale;
+                        }
+                        if (_stackfield != null)
+                        {
+                            _stackfield.ScrollSpeed = _settings.ScrollSpeed;
+                            _stackfield.GlobalScale = _settings.GlobalScale;
                         }
 
                         Console.WriteLine($"[MainGame] Settings loaded successfully. Main={_targetVolume}, SFX={_effectsVolume}, Offset={_audioOffset}");
@@ -864,6 +1415,11 @@ namespace CoreGame
                     _settings.ScrollSpeed = _taikofield.ScrollSpeed;
                     _settings.GlobalScale = _taikofield.GlobalScale;
                 }
+                else if (_stackfield != null)
+                {
+                    _settings.ScrollSpeed = _stackfield.ScrollSpeed;
+                    _settings.GlobalScale = _stackfield.GlobalScale;
+                }
 
                 // Save keybindings
                 _settings.KeyToggleCover = _keyToggleCover.ToString();
@@ -873,7 +1429,6 @@ namespace CoreGame
                 _settings.KeyHitLeft2 = _keyHitLeft2.ToString();
                 _settings.KeyHitRight1 = _keyHitRight1.ToString();
                 _settings.KeyHitRight2 = _keyHitRight2.ToString();
-                _settings.KeyToggleListenScore = _keyToggleListenScore.ToString();
                 _settings.KeyExitGame = _keyExitGame.ToString();
 
                 var options = new JsonSerializerOptions { WriteIndented = true };
