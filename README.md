@@ -4,11 +4,11 @@
 
 # Playlist Stuck on Repeat
 
-[![Website](https://img.shields.io/badge/website-psor.vectxyz.com-blue.svg?style=flat-square)](https://psor.vectxyz.com)
-[![Build status](https://github.com/Aethertenshi/Playlist-stuck-on-repeat__Art2Framework/actions/workflows/ci.yml/badge.svg?branch=master&event=push)](https://github.com/Aethertenshi/Playlist-stuck-on-repeat__Art2Framework/actions)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE.txt)
-[![Framework](https://img.shields.io/badge/.NET-10.0-purple.svg?style=flat-square)](https://dotnet.microsoft.com/)
-[![Powered by](https://img.shields.io/badge/powered%20by-Art2Framework-brightgreen.svg?style=flat-square)](https://github.com/Aethertenshi/ArtFrameEXT)
+[![Website](https://img.shields.io/badge/website-psor.vectxyz.com-blue.svg)](https://psor.vectxyz.com)
+[![Releases](https://img.shields.io/github/v/release/Aethertenshi/Playlist-stuck-on-repeat__Art2Framework.svg)](https://github.com/Aethertenshi/Playlist-stuck-on-repeat__Art2Framework/actions)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE.txt)
+[![Framework](https://img.shields.io/badge/.NET-10.0-purple.svg)](https://dotnet.microsoft.com/)
+[![Powered by](https://img.shields.io/badge/powered%20by-Art2Framework-brightgreen.svg)](https://github.com/Aethertenshi/ArtFrameEXT)
 
 A free-to-play C# rhythm game. Music is just a *tap* away!
 
