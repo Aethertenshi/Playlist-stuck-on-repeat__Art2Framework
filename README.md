@@ -4,7 +4,7 @@
 
 # Playlist Stuck on Repeat
 
-[![Website](https://img.shields.io/badge/website-psor.vectxyz.com-blue.svg)](https://psor.vectxyz.com)
+[![Website](https://img.shields.io/badge/website-psor.vectxyz.com-white.svg)](https://psor.vectxyz.com)
 [![Releases](https://img.shields.io/github/v/release/Aethertenshi/Playlist-stuck-on-repeat__Art2Framework.svg)](https://github.com/Aethertenshi/Playlist-stuck-on-repeat__Art2Framework/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE.txt)
 [![Framework](https://img.shields.io/badge/.NET-10.0-purple.svg)](https://dotnet.microsoft.com/)
